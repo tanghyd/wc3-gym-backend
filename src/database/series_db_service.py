@@ -69,26 +69,26 @@ class SeriesDBService(AbstractDatabaseService):
             session.close()
 
     def getAll(self):
-        try:
-            from src.database.model.DBUser import DBUser
-            from src.database.model.DBRelationships import DBUserTeamSeason
-            from src.database.model.DBMatch import DBMatch
-            result = []
-            session = self.Session()
-            # Eager load relationships, load w3c_stats and team_seasons with season for players
-            series = session.query(DBSeries)\
-                .options(
-                    joinedload(DBSeries.match).joinedload(DBMatch.team1),
-                    joinedload(DBSeries.match).joinedload(DBMatch.team2),
-                    joinedload(DBSeries.player1).joinedload(DBUser.w3c_stats),
-                    joinedload(DBSeries.player1).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season),
-                    joinedload(DBSeries.player2).joinedload(DBUser.w3c_stats),
-                    joinedload(DBSeries.player2).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season)
-                ).all()
-            for single_series in series:
-                result.append(SeriesDTO.from_dbseries(single_series))
-            return result
-        except SQLAlchemyError as e:
+        with self.get_session() as session:
+            try:
+                from src.database.model.DBUser import DBUser
+                from src.database.model.DBRelationships import DBUserTeamSeason
+                from src.database.model.DBMatch import DBMatch
+                result = []
+                # Eager load relationships, load w3c_stats and team_seasons with season for players
+                series = session.query(DBSeries)\
+                    .options(
+                        joinedload(DBSeries.match).joinedload(DBMatch.team1),
+                        joinedload(DBSeries.match).joinedload(DBMatch.team2),
+                        joinedload(DBSeries.player1).joinedload(DBUser.w3c_stats),
+                        joinedload(DBSeries.player1).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season),
+                        joinedload(DBSeries.player2).joinedload(DBUser.w3c_stats),
+                        joinedload(DBSeries.player2).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season)
+                    ).all()
+                for single_series in series:
+                    result.append(SeriesDTO.from_dbseries(single_series))
+                return result
+            except SQLAlchemyError as e:
                 raise DBException(f"Database error: {e}")
 
     def search(self, query):
