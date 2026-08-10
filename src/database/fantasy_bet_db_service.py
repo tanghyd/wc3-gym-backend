@@ -58,14 +58,14 @@ class FantasyBetDBService(AbstractDatabaseService):
             session.close()
 
     def getAll(self):
-        try:
-            result = []
-            session = self.Session()
-            fbet = DBFantasyBet.getAll(session)
-            for single_fbet in fbet:
-                result.append(FantasyBetDTO.from_dbfantasybet(single_fbet))
-            return result
-        except SQLAlchemyError as e:
+        with self.get_session() as session:
+            try:
+                result = []
+                fbet = DBFantasyBet.getAll(session)
+                for single_fbet in fbet:
+                    result.append(FantasyBetDTO.from_dbfantasybet(single_fbet))
+                return result
+            except SQLAlchemyError as e:
                 raise DBException(f"Database error: {e}")
 
     def search(self, query):

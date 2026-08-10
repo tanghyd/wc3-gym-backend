@@ -58,14 +58,14 @@ class FantasyTeamDBService(AbstractDatabaseService):
             session.close()
 
     def getAll(self):
-        try:
-            result = []
-            session = self.Session()
-            fteams = DBFantasyTeam.getAll(session)
-            for fteam in fteams:
-                result.append(FantasyTeamDTO.from_dbfantasyteam(fteam))
-            return result
-        except SQLAlchemyError as e:
+        with self.get_session() as session:
+            try:
+                result = []
+                fteams = DBFantasyTeam.getAll(session)
+                for fteam in fteams:
+                    result.append(FantasyTeamDTO.from_dbfantasyteam(fteam))
+                return result
+            except SQLAlchemyError as e:
                 raise DBException(f"Database error: {e}")
 
     def search(self, query):
