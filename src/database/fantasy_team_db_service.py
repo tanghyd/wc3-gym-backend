@@ -13,49 +13,41 @@ logger = logging.getLogger(__name__)
 class FantasyTeamDBService(AbstractDatabaseService):
      
     def add(self, fantasy_team : FantasyTeamDTO):
-        try:
-            session = self.Session()
-            fantasy_team = DBFantasyTeam.add(session, fantasy_team.to_db_dict())
-            if not fantasy_team:
-                raise DBException("FantasyTeam could not be created!")
-            return FantasyTeamDTO.from_dbfantasyteam(fantasy_team)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                fantasy_team = DBFantasyTeam.add(session, fantasy_team.to_db_dict())
+                if not fantasy_team:
+                    raise DBException("FantasyTeam could not be created!")
+                return FantasyTeamDTO.from_dbfantasyteam(fantasy_team)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
     
     def update(self, fantasy_team: FantasyTeamDTO):
-        try:
-            session = self.Session()
-            fantasy_team = DBFantasyTeam.update(session, fantasy_team.id, **fantasy_team.to_db_dict())
-            if not fantasy_team:
-                raise DBException("Fantasy Team could not be updated!")
-            return FantasyTeamDTO.from_dbfantasyteam(fantasy_team)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                fantasy_team = DBFantasyTeam.update(session, fantasy_team.id, **fantasy_team.to_db_dict())
+                if not fantasy_team:
+                    raise DBException("Fantasy Team could not be updated!")
+                return FantasyTeamDTO.from_dbfantasyteam(fantasy_team)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def delete(self, fantasy_team_id):
-        try:
-            session = self.Session()
-            DBFantasyTeam.delete(session, fantasy_team_id)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                DBFantasyTeam.delete(session, fantasy_team_id)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def get(self, fantasy_team_id):
-        try:
-            session = self.Session()
-            fteam = session.query(DBFantasyTeam).filter_by(id=fantasy_team_id).first()
-            if not fteam:
-                raise DBException("Fantasy Team could not be found")
-            return FantasyTeamDTO.from_dbfantasyteam(fteam)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                fteam = session.query(DBFantasyTeam).filter_by(id=fantasy_team_id).first()
+                if not fteam:
+                    raise DBException("Fantasy Team could not be found")
+                return FantasyTeamDTO.from_dbfantasyteam(fteam)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def getAll(self):
         with self.get_session() as session:

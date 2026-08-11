@@ -11,62 +11,54 @@ logger = logging.getLogger(__name__)
 
 class SeriesDBService(AbstractDatabaseService):
     def add(self, series: SeriesDTO):
-        try:
-            session = self.Session()
-            series = DBSeries.add(session, series.to_db_dict())
-            if not series:
-                raise DBException("Series could not be created!")
-            return SeriesDTO.from_dbseries(series)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                series = DBSeries.add(session, series.to_db_dict())
+                if not series:
+                    raise DBException("Series could not be created!")
+                return SeriesDTO.from_dbseries(series)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
     
     def update(self, series: SeriesDTO):
-        try:
-            session = self.Session()
-            series = DBSeries.update(session, series.id, **series.to_db_dict())
-            if not series:
-                raise DBException("Series could not be updated!")
-            return SeriesDTO.from_dbseries(series)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                series = DBSeries.update(session, series.id, **series.to_db_dict())
+                if not series:
+                    raise DBException("Series could not be updated!")
+                return SeriesDTO.from_dbseries(series)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def delete(self, series_id):
-        try:
-            session = self.Session()
-            DBSeries.delete(session, series_id)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                DBSeries.delete(session, series_id)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def get(self, series_id):
-        try:
-            from src.database.model.DBUser import DBUser
-            from src.database.model.DBRelationships import DBUserTeamSeason
-            from src.database.model.DBMatch import DBMatch
-            session = self.Session()
-            # Eager load relationships to avoid N+1 queries, load w3c_stats and team_seasons with season for players
-            series = session.query(DBSeries)\
-                .options(
-                    joinedload(DBSeries.match).joinedload(DBMatch.team1),
-                    joinedload(DBSeries.match).joinedload(DBMatch.team2),
-                    joinedload(DBSeries.player1).joinedload(DBUser.w3c_stats),
-                    joinedload(DBSeries.player1).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season),
-                    joinedload(DBSeries.player2).joinedload(DBUser.w3c_stats),
-                    joinedload(DBSeries.player2).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season)
-                )\
-                .filter_by(id=series_id).first()
-            if not series:
-                raise DBException("Series could not be found")
-            return SeriesDTO.from_dbseries(series)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                from src.database.model.DBUser import DBUser
+                from src.database.model.DBRelationships import DBUserTeamSeason
+                from src.database.model.DBMatch import DBMatch
+                # Eager load relationships to avoid N+1 queries, load w3c_stats and team_seasons with season for players
+                series = session.query(DBSeries)\
+                    .options(
+                        joinedload(DBSeries.match).joinedload(DBMatch.team1),
+                        joinedload(DBSeries.match).joinedload(DBMatch.team2),
+                        joinedload(DBSeries.player1).joinedload(DBUser.w3c_stats),
+                        joinedload(DBSeries.player1).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season),
+                        joinedload(DBSeries.player2).joinedload(DBUser.w3c_stats),
+                        joinedload(DBSeries.player2).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season)
+                    )\
+                    .filter_by(id=series_id).first()
+                if not series:
+                    raise DBException("Series could not be found")
+                return SeriesDTO.from_dbseries(series)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def getAll(self):
         with self.get_session() as session:
