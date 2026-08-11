@@ -297,7 +297,30 @@ def _process_import(file_bytes, create_new):
                     if old_series_id:
                         series_id_mapping[old_series_id] = series.id
 
-        # ===== Step 7: Import Fantasy Teams =====
+        # ===== Step 7: Supplement user_id_mapping from Fantasy Users sheet =====
+        # Must run before Fantasy Teams and Fantasy Bets so captains/bettors not in Players are resolved.
+        try:
+            df_fantasy_users = pd.read_excel(file_stream, sheet_name='Fantasy Users')
+            for _, row in df_fantasy_users.iterrows():
+                if pd.isna(row['ID']) or pd.isna(row['Battle Tag']):
+                    continue
+                old_uid = int(row['ID'])
+                if old_uid in user_id_mapping:
+                    logger.info(f"Fantasy user {old_uid} already mapped via Players sheet, skipping")
+                    continue  # already mapped via Players sheet
+                battle_tag = row['Battle Tag']
+                query = QueryUtil.parseQuery(f"battleTag == {battle_tag}")
+                if query and query.elementA:
+                    existing_users = import_blueprint.user_app_service.search(query)
+                    if existing_users:
+                        user_id_mapping[old_uid] = existing_users[0].id
+                        logger.info(f"Mapped fantasy user {old_uid} -> {existing_users[0].id} via battleTag")
+                    else:
+                        logger.warning(f"Fantasy user not found by battleTag: {battle_tag} (old ID {old_uid})")
+        except Exception as e:
+            logger.warning(f"Fantasy Users sheet not found or error: {e}")
+
+        # ===== Step 8: Import Fantasy Teams =====
         fantasy_team_id_mapping = {}  # old_id -> new_id
         try:
             df_fantasy_teams = pd.read_excel(file_stream, sheet_name='Fantasy Teams')
@@ -346,7 +369,7 @@ def _process_import(file_bytes, create_new):
         except Exception as e:
             logger.warning(f"Fantasy Teams sheet not found or error: {e}")
 
-        # ===== Step 8: Import Fantasy Team Players =====
+        # ===== Step 9: Import Fantasy Team Players =====
         try:
             df_fantasy_players = pd.read_excel(file_stream, sheet_name='Fantasy Team Players')
             # Group players by fantasy team
@@ -372,7 +395,7 @@ def _process_import(file_bytes, create_new):
         except Exception as e:
             logger.warning(f"Fantasy Team Players sheet not found or error: {e}")
 
-        # ===== Step 9: Import Fantasy Bets =====
+        # ===== Step 10: Import Fantasy Bets =====
         try:
             df_fantasy_bets = pd.read_excel(file_stream, sheet_name='Fantasy Bets')
             for _, row in df_fantasy_bets.iterrows():
@@ -697,6 +720,7 @@ def export_season():
         # ===== Sheet 9: Fantasy Bets =====
         fantasy_bets_sheet = workbook.create_sheet(title='Fantasy Bets')
         fantasy_bets_sheet.append(['ID', 'Season ID', 'Series ID', 'User ID', 'Winner ID', 'Bet Points', 'Bet Result'])
+        fantasy_bets = []
         if query and query.elementA:
             fantasy_bets = import_blueprint.fantasy_bet_app_service.search_fantasy_bets(query)
             for fbet in fantasy_bets:
@@ -709,6 +733,37 @@ def export_season():
                     fbet.bet_points,
                     fbet.bet_result if fbet.bet_result else ''
                 ])
+
+        # ===== Sheet 10: Fantasy Users =====
+        # All users referenced in fantasy teams (captains) or bets not already in the Players sheet.
+        player_ids_in_export = set()
+        for team in season_teams:
+            for user in team.player_by_season.get(season_id, []):
+                player_ids_in_export.add(user.id)
+
+        fantasy_user_ids = set()
+        for fbet in fantasy_bets:
+            fantasy_user_ids.add(fbet.user_id)
+            fantasy_user_ids.add(fbet.winner_id)
+        for fteam in fantasy_teams if 'fantasy_teams' in locals() else []:
+            fantasy_user_ids.add(fteam.captain_id)
+        extra_user_ids = fantasy_user_ids - player_ids_in_export
+
+        fantasy_users_sheet = workbook.create_sheet(title='Fantasy Users')
+        fantasy_users_sheet.append(['ID', 'Name', 'Battle Tag', 'Discord Tag', 'Discord ID'])
+        for uid in extra_user_ids:
+            try:
+                u = import_blueprint.user_app_service.get_user(uid)
+                if u:
+                    fantasy_users_sheet.append([
+                        u.id,
+                        u.name if u.name else '',
+                        u.battleTag,
+                        u.discordTag if u.discordTag else '',
+                        u.discordId if u.discordId else ''
+                    ])
+            except Exception:
+                logger.warning(f"Could not fetch user {uid} for Fantasy Users sheet")
 
         excel_stream = BytesIO()
         workbook.save(excel_stream)
