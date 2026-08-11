@@ -122,7 +122,7 @@ class DBSeason(DBModel):
                 raise Exception(f"User not found by id: {user_id}")
             user_season = session.query(DBUserSeasonSignup).filter_by(season_id=obj_id,user_id=user.id).first()
             if not user_season:
-                raise Exception(f"Map not part of the season, user id: {user_id}, season id {obj_id}")
+                raise Exception(f"User not signed up for the season, user id: {user_id}, season id {obj_id}")
             session.delete(user_season)
 
         session.flush()
