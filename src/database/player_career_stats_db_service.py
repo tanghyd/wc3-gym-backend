@@ -34,7 +34,6 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
             stats = session.query(DBPlayerCareerStats).filter_by(id=stat_id).first()
             if stats:
                 session.delete(stats)
-                session.commit()
                 return True
             return False
     
@@ -76,8 +75,7 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
                 
                 stats = DBPlayerCareerStats(user_id=user_id, player_name=player_name)
                 session.add(stats)
-                session.commit()
-                session.refresh(stats)
+                session.flush()
             
             return stats
     
@@ -123,9 +121,7 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
                     avg_series_per_season=avg_series
                 )
                 session.add(stats)
-            
-            session.commit()
-    
+
     def update_totals(self, user_id: int, rating: int, series_won: int, series_lost: int,
                      series_winrate: float, games_won: int, games_lost: int, 
                      games_winrate: float, seasons_played: int, avg_series: float):
@@ -143,8 +139,6 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
                 stats.games_winrate = round(games_winrate, 2)
                 stats.seasons_played = seasons_played
                 stats.avg_series_per_season = round(avg_series, 2)
-                
-                session.commit()
     
     def batch_update_stats(self, updates):
         """Batch update stats for multiple users.
@@ -162,73 +156,72 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
             for update_data in updates:
                 user_id = None  # Initialize to avoid reference errors
                 try:
-                    user_id = update_data['user_id']
-                    player_name = update_data['player_name']
+                    # A savepoint per item: an error rolls back only this
+                    # item and keeps the other items in the transaction.
+                    with session.begin_nested():
+                        user_id = update_data['user_id']
+                        player_name = update_data['player_name']
                     
-                    # Query for both potential records separately to handle merging
-                    # Only query by user_id if it's not None (unmapped records have user_id=None)
-                    record_by_user_id = None
-                    if user_id is not None:
-                        record_by_user_id = session.query(DBPlayerCareerStats).filter_by(user_id=user_id).first()
-                    record_by_name = session.query(DBPlayerCareerStats).filter_by(player_name=player_name).first()
-                    
-                    # Handle different scenarios
-                    if record_by_user_id and record_by_name and record_by_user_id.id != record_by_name.id:
-                        # Two separate records exist - merge historical into user_id record
-                        logger.info(f"Merging records for {player_name}: user_id record {record_by_user_id.id} and name record {record_by_name.id}")
-                        stats_record = record_by_user_id
-                        # Keep existing player_name, don't overwrite with current name
-                        
-                        # Preserve historical data from the name-based record if it has any
-                        if record_by_name.historical_rating:
-                            stats_record.historical_rating = record_by_name.historical_rating
-                            stats_record.historical_series_won = record_by_name.historical_series_won
-                            stats_record.historical_series_lost = record_by_name.historical_series_lost
-                            stats_record.historical_games_won = record_by_name.historical_games_won
-                            stats_record.historical_games_lost = record_by_name.historical_games_lost
-                            stats_record.historical_seasons_played = record_by_name.historical_seasons_played
-                        
-                        # Delete the duplicate record
-                        session.delete(record_by_name)
-                        
-                    elif record_by_user_id:
-                        # Only user_id record exists - update stats only
-                        # Don't change player_name (historical data should not change)
-                        stats_record = record_by_user_id
-                        
-                    elif record_by_name:
-                        # Only name-based record exists (historical) - link it to user_id
-                        # Don't change player_name (preserve historical name)
-                        stats_record = record_by_name
-                        stats_record.user_id = user_id
-                        
-                    else:
-                        # No existing record - create new with provided name
-                        stats_record = DBPlayerCareerStats(
-                            user_id=user_id,
-                            player_name=player_name
-                        )
-                        session.add(stats_record)
-                    
-                    # Update all stat fields
-                    stats_record.rating = update_data['rating']
-                    stats_record.series_won = update_data['series_won']
-                    stats_record.series_lost = update_data['series_lost']
-                    stats_record.series_winrate = update_data['series_winrate']
-                    stats_record.games_won = update_data['games_won']
-                    stats_record.games_lost = update_data['games_lost']
-                    stats_record.games_winrate = update_data['games_winrate']
-                    stats_record.seasons_played = update_data['seasons_played']
-                    stats_record.avg_series_per_season = update_data['avg_series_per_season']
-                    
+                        # Query for both potential records separately to handle merging
+                        # Only query by user_id if it's not None (unmapped records have user_id=None)
+                        record_by_user_id = None
+                        if user_id is not None:
+                            record_by_user_id = session.query(DBPlayerCareerStats).filter_by(user_id=user_id).first()
+                        record_by_name = session.query(DBPlayerCareerStats).filter_by(player_name=player_name).first()
+
+                        # Handle different scenarios
+                        if record_by_user_id and record_by_name and record_by_user_id.id != record_by_name.id:
+                            # Two separate records exist - merge historical into user_id record
+                            logger.info(f"Merging records for {player_name}: user_id record {record_by_user_id.id} and name record {record_by_name.id}")
+                            stats_record = record_by_user_id
+                            # Keep existing player_name, don't overwrite with current name
+
+                            # Preserve historical data from the name-based record if it has any
+                            if record_by_name.historical_rating:
+                                stats_record.historical_rating = record_by_name.historical_rating
+                                stats_record.historical_series_won = record_by_name.historical_series_won
+                                stats_record.historical_series_lost = record_by_name.historical_series_lost
+                                stats_record.historical_games_won = record_by_name.historical_games_won
+                                stats_record.historical_games_lost = record_by_name.historical_games_lost
+                                stats_record.historical_seasons_played = record_by_name.historical_seasons_played
+
+                            # Delete the duplicate record
+                            session.delete(record_by_name)
+
+                        elif record_by_user_id:
+                            # Only user_id record exists - update stats only
+                            # Don't change player_name (historical data should not change)
+                            stats_record = record_by_user_id
+
+                        elif record_by_name:
+                            # Only name-based record exists (historical) - link it to user_id
+                            # Don't change player_name (preserve historical name)
+                            stats_record = record_by_name
+                            stats_record.user_id = user_id
+
+                        else:
+                            # No existing record - create new with provided name
+                            stats_record = DBPlayerCareerStats(
+                                user_id=user_id,
+                                player_name=player_name
+                            )
+                            session.add(stats_record)
+
+                        # Update all stat fields
+                        stats_record.rating = update_data['rating']
+                        stats_record.series_won = update_data['series_won']
+                        stats_record.series_lost = update_data['series_lost']
+                        stats_record.series_winrate = update_data['series_winrate']
+                        stats_record.games_won = update_data['games_won']
+                        stats_record.games_lost = update_data['games_lost']
+                        stats_record.games_winrate = update_data['games_winrate']
+                        stats_record.seasons_played = update_data['seasons_played']
+                        stats_record.avg_series_per_season = update_data['avg_series_per_season']
+
                     updated += 1
-                    
+
                 except Exception as e:
                     logger.error(f"Error updating stats for user {user_id}: {e}")
                     errors.append(f"Error for user {user_id}: {str(e)}")
-                    # Rollback this update and continue with next
-                    session.rollback()
-            
-            session.commit()
         
         return {'updated': updated, 'errors': errors}

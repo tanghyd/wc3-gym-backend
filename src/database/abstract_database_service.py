@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from src.database.model.DBModel import Base
-import logging
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
+import logging
+
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
+
+from src.database.model.DBModel import Base
+from custom_exceptions import DBException
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +24,20 @@ class AbstractDatabaseService(ABC):
         )
         
         Base.metadata.create_all(self.engine)
-        self.Session = scoped_session(sessionmaker(bind=self.engine))
+        self.Session = sessionmaker(bind=self.engine)
 
     @contextmanager
     def get_session(self):
-        session = self.Session()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        # The session commits when the block ends without an error,
+        # rolls back when there is an error, and always closes.
+        # Model helpers and service code must not commit; they flush.
+        with self.Session() as session:
+            try:
+                with session.begin():
+                    yield session
+            except SQLAlchemyError as e:
+                logger.error(f"Database error: {e}")
+                raise DBException(f"Database error: {e}")
 
     @abstractmethod
     def add(self, **kwargs):
