@@ -1,0 +1,85 @@
+from typing import Annotated
+
+from src.database.model.DBEnums import Race
+from src.schemas.base import APISchema, EmptyToNone
+from src.schemas.season import Season
+from src.schemas.team import Team
+from src.schemas.user import User
+
+DB_FIELDS = {
+    'name', 'season_id', 'captain_id', 'drafted_team_id', 'drafted_race',
+    'player_points', 'bench_points', 'team_points', 'race_points',
+    'bet_points', 'total_points',
+}
+
+
+class FantasyTeam(APISchema):
+    id: int | None = None
+    name: str | None = None
+    season_id: int | None = None
+    season: Season | None = None
+    captain_id: int | None = None
+    captain: User | None = None
+    drafted_team_id: int | None = None
+    drafted_team: Team | None = None
+    drafted_race: Race | str | None = None
+    drafted_players: Annotated[list[User] | None, EmptyToNone] = None
+    player_points: int | None = None
+    bench_points: int | None = None
+    team_points: int | None = None
+    race_points: int | None = None
+    bet_points: int | None = None
+    total_points: int | None = None
+
+    def to_db_dict(self):
+        return self.model_dump(include=DB_FIELDS)
+
+    @classmethod
+    def from_dbfantasyteam(cls, fteam):
+        if not fteam:
+            return None
+
+        drafted_players = []
+        if fteam.drafted_players:
+            for dp in fteam.drafted_players:
+                user = User.from_dbuser(dp.users)
+                if user:
+                    drafted_players.append(user)
+
+        return cls(
+            id=fteam.id,
+            name=fteam.name,
+            season_id=fteam.season_id,
+            season=Season.from_dbseason(fteam.season) if fteam.season else None,
+            captain_id=fteam.captain_id,
+            captain=User.from_dbuser(fteam.captain) if fteam.captain else None,
+            drafted_team_id=fteam.drafted_team_id,
+            drafted_team=Team.from_dbteam(fteam.drafted_team) if fteam.drafted_team else None,
+            drafted_race=fteam.drafted_race,
+            drafted_players=drafted_players,
+            player_points=fteam.player_points,
+            bench_points=fteam.bench_points,
+            team_points=fteam.team_points,
+            race_points=fteam.race_points,
+            bet_points=fteam.bet_points,
+            total_points=fteam.total_points,
+        )
+
+    @staticmethod
+    def schema():
+        return {
+            'type': 'object',
+            'properties': {
+                'season_id': {'type': 'integer'},
+                'captain_id': {'type': 'integer'},
+                'drafted_team_id': {'type': 'integer'},
+                'drafted_race': {'type': 'integer'},
+                'player_points': {'type': 'integer'},
+                'bench_points': {'type': 'integer'},
+                'team_points': {'type': 'integer'},
+                'race_points': {'type': 'integer'},
+                'bet_points': {'type': 'integer'},
+                'total_points': {'type': 'integer'}
+            },
+            'required': ['season_id', 'captain_id', 'drafted_team_id', 'drafted_race']
+        }

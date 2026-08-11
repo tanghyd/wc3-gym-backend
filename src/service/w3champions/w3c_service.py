@@ -2,7 +2,7 @@ import requests
 import os
 import urllib.parse
 import logging
-from src.dtos.w3c_stats_dto import W3CStatsDTO
+from src.schemas.w3c_stats import W3CStats
 from src.database.model.DBEnums import Race
 
 
@@ -89,7 +89,7 @@ class W3CService:
         stats = []
         for gmode_stats  in result:
             if gmode_stats.get('gameMode') and gmode_stats.get('gameMode') == 1:
-                w3cstats = W3CStatsDTO(data={})
+                w3cstats = W3CStats(data={})
                 w3cstats.wc3_season = gmode_stats.get('season')
                 w3cstats.wins = gmode_stats.get('wins')
                 w3cstats.losses = gmode_stats.get('losses')
