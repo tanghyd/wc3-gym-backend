@@ -13,49 +13,41 @@ logger = logging.getLogger(__name__)
 class FantasyBetDBService(AbstractDatabaseService):
 
     def add(self, fantasy_bet : FantasyBetDTO):
-        try:
-            session = self.Session()
-            fbet = DBFantasyBet.add(session, fantasy_bet.to_db_dict())
-            if not fbet:
-                raise DBException("FantasyBet could not be created!")
-            return FantasyBetDTO.from_dbfantasybet(fbet)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                fbet = DBFantasyBet.add(session, fantasy_bet.to_db_dict())
+                if not fbet:
+                    raise DBException("FantasyBet could not be created!")
+                return FantasyBetDTO.from_dbfantasybet(fbet)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
     
     def update(self, fantasy_bet: FantasyBetDTO):
-        try:
-            session = self.Session()
-            fantasy_bet = DBFantasyBet.update(session, fantasy_bet.id, **fantasy_bet.to_db_dict())
-            if not fantasy_bet:
-                raise DBException("Fantasy Bet could not be updated!")
-            return FantasyBetDTO.from_dbfantasybet(fantasy_bet)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                fantasy_bet = DBFantasyBet.update(session, fantasy_bet.id, **fantasy_bet.to_db_dict())
+                if not fantasy_bet:
+                    raise DBException("Fantasy Bet could not be updated!")
+                return FantasyBetDTO.from_dbfantasybet(fantasy_bet)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def delete(self, fantasy_bet_id):
-        try:
-            session = self.Session()
-            DBFantasyBet.delete(session, fantasy_bet_id)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                DBFantasyBet.delete(session, fantasy_bet_id)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def get(self, fantasy_bet_id):
-        try:
-            session = self.Session()
-            fbet = session.query(DBFantasyBet).filter_by(id=fantasy_bet_id).first()
-            if not fbet:
-                raise DBException("Fantasy Bet could not be found")
-            return FantasyBetDTO.from_dbfantasybet(fbet)
-        except SQLAlchemyError as e:
-            raise DBException(f"Database error: {e}")
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                fbet = session.query(DBFantasyBet).filter_by(id=fantasy_bet_id).first()
+                if not fbet:
+                    raise DBException("Fantasy Bet could not be found")
+                return FantasyBetDTO.from_dbfantasybet(fbet)
+            except SQLAlchemyError as e:
+                raise DBException(f"Database error: {e}")
 
     def getAll(self):
         with self.get_session() as session:
