@@ -1,4 +1,6 @@
-from src.schemas.base import APISchema
+from typing import Annotated
+
+from src.schemas.base import APISchema, EmptyStrToNone
 from src.schemas.season import Season
 from src.schemas.series import Series
 from src.schemas.user import User
@@ -18,7 +20,9 @@ class FantasyBet(APISchema):
     user: User | None = None
     winner_id: int | None = None
     winner: User | None = None
-    bet_points: int | None = None
+    # With fixed bet points enabled, the service overwrites this after
+    # construction, so a cleared input from the UI must not fail here.
+    bet_points: Annotated[int | None, EmptyStrToNone] = None
     bet_result: int | None = None
 
     def to_db_dict(self):

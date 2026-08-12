@@ -1,10 +1,13 @@
-from src.schemas.base import APISchema
+from typing import Annotated
+
+from src.schemas.base import APISchema, NumToStr
 
 
 class Settings(APISchema):
     id: int | None = None
     key: str | None = None
-    value: str | None = None
+    # Settings values are stored as strings but callers pass numbers too.
+    value: Annotated[str | None, NumToStr] = None
     description: str | None = None
 
     @classmethod

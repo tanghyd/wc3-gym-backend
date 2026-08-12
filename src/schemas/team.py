@@ -2,7 +2,7 @@ from typing import Annotated, Any
 
 from pydantic import BeforeValidator
 
-from src.schemas.base import APISchema, IntToStr, NoneToList
+from src.schemas.base import APISchema, NoneToList, NumToStr
 from src.schemas.season_info import SeasonInfo
 from src.schemas.user import User
 
@@ -25,9 +25,10 @@ SeasonLists = BeforeValidator(_season_lists)
 
 class TeamReduced(APISchema):
     id: int | None = None
-    name: str | None = None
-    long_name: str | None = None
-    discord_role: Annotated[str | None, IntToStr] = None
+    # name/long_name also receive numeric cells from the xlsx import.
+    name: Annotated[str | None, NumToStr] = None
+    long_name: Annotated[str | None, NumToStr] = None
+    discord_role: Annotated[str | None, NumToStr] = None
 
     @classmethod
     def from_dbteam(cls, team):
@@ -43,11 +44,6 @@ class Team(TeamReduced):
     player_by_season: Annotated[dict[int, list[User]], SeasonLists] = {}
     coaches_by_season: Annotated[dict[int, list[User]], SeasonLists] = {}
     seasons_info: Annotated[list[SeasonInfo], NoneToList] = []
-
-    def to_dict_reduced(self):
-        return self.model_dump(
-            mode='json', include={'id', 'name', 'long_name', 'discord_role'}
-        )
 
     def to_db_dict(self):
         return self.model_dump(include={'name', 'long_name', 'discord_role'})
@@ -106,15 +102,6 @@ class Team(TeamReduced):
             player_by_season=u,
             coaches_by_season=coaches,
             seasons_info=seasons_info,
-        )
-
-    @classmethod
-    def from_dbteam_reduced(cls, team):
-        return cls(
-            id=team.id,
-            name=team.name,
-            long_name=team.long_name,
-            discord_role=team.discord_role,
         )
 
     @staticmethod

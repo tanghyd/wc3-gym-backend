@@ -40,8 +40,6 @@ _ALL_MODELS = [
     FantasyTeam, FantasyBet, PlayerCareerStats,
 ]
 for _model in _ALL_MODELS:
-    _model.model_rebuild(force=True, raise_errors=False)
-for _model in _ALL_MODELS:
     _model.model_rebuild(force=True)
 
 __all__ = [

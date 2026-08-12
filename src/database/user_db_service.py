@@ -82,7 +82,7 @@ class UserDBService(AbstractDatabaseService):
 
     def updateW3CStats(self, w3c_stats : W3CStats):
         with self.get_session() as session:
-            stats = DBW3CStats.update(session, w3c_stats.id, **w3c_stats.to_dict())
+            stats = DBW3CStats.update(session, w3c_stats.id, **w3c_stats.to_db_dict())
             if not stats:
                 raise DBException("W3CStats could not be updated")
             return W3CStats.from_dbw3cstats(stats)

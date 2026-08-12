@@ -29,7 +29,7 @@ class KothSignup(APISchema):
             twitch_username=signup.twitch_username,
             battle_tag=signup.battle_tag,
             w3c_name=signup.w3c_name,
-            race=signup.race.value if signup.race else None,
+            race=signup.race,
             mmr=signup.mmr,
             bracket=signup.bracket,
             is_king=signup.is_king,

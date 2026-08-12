@@ -1,4 +1,6 @@
-from src.schemas.base import APISchema
+from typing import Annotated
+
+from src.schemas.base import APISchema, NumToStr
 from src.schemas.map import Map
 from src.schemas.season import Season
 from src.schemas.team import TeamReduced
@@ -18,7 +20,8 @@ class Match(APISchema):
     season_id: int | None = None
     season: Season | None = None
     playday: int | None = None
-    date_frame: str | None = None
+    # date_frame receives numeric cells from the xlsx import.
+    date_frame: Annotated[str | None, NumToStr] = None
     fixed_map_id: int | None = None
     fixed_map: Map | None = None
     team1_score: int | None = None

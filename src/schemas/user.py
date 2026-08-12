@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from src.database.model.DBEnums import Race
-from src.schemas.base import APISchema, NoneToList
+from src.schemas.base import APISchema, NoneToList, NumToStr
 from src.schemas.season import Season
 from src.schemas.user_team_season_stats import UserTeamSeasonStats
 from src.schemas.w3c_stats import W3CStats
@@ -14,13 +14,15 @@ DB_FIELDS = {
 
 class User(APISchema):
     id: int | None = None
-    name: str | None = None
-    battleTag: str | None = None
-    discordTag: str | None = None
-    discordId: str | None = None
+    # These fields receive raw numeric cells from the xlsx import, and
+    # discordId also receives numeric snowflakes from JSON bodies.
+    name: Annotated[str | None, NumToStr] = None
+    battleTag: Annotated[str | None, NumToStr] = None
+    discordTag: Annotated[str | None, NumToStr] = None
+    discordId: Annotated[str | None, NumToStr] = None
     race: Race | str | None = None
     mmr: int | None = None
-    country: str | None = None
+    country: Annotated[str | None, NumToStr] = None
     w3c_stats: Annotated[list[W3CStats], NoneToList] = []
     gnl_stats: Annotated[list[UserTeamSeasonStats], NoneToList] = []
     fantasy_tier: int | None = None
@@ -43,10 +45,10 @@ class User(APISchema):
             race=user.race,
             mmr=user.mmr,
             country=user.country,
-            w3c_stats=[s for s in (W3CStats.from_dbw3cstats(stat) for stat in user.w3c_stats) if s] if user.w3c_stats else [],
-            gnl_stats=[s for s in (UserTeamSeasonStats.from_db_user_team_season(stat) for stat in user.team_seasons) if s] if user.team_seasons else [],
+            w3c_stats=[W3CStats.from_dbw3cstats(stat) for stat in (user.w3c_stats or [])],
+            gnl_stats=[UserTeamSeasonStats.from_db_user_team_season(stat) for stat in (user.team_seasons or [])],
             fantasy_tier=user.fantasy_tier,
-            signup_seasons=[s for s in (Season.from_dbseason_reduced(signup.season) for signup in user.signup_seasons) if s] if user.signup_seasons else [],
+            signup_seasons=[Season.from_dbseason_reduced(signup.season) for signup in (user.signup_seasons or [])],
         )
 
     @staticmethod

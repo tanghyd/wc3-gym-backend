@@ -1,5 +1,7 @@
+from typing import Annotated
+
 from src.database.model.DBEnums import Race
-from src.schemas.base import APISchema
+from src.schemas.base import APISchema, RoundToInt
 
 DB_FIELDS = {
     'wc3_season', 'wins', 'losses', 'games', 'mmr',
@@ -9,16 +11,18 @@ DB_FIELDS = {
 
 class W3CStats(APISchema):
     id: int | None = None
-    wc3_season: int | None = None
-    wins: int | None = None
-    losses: int | None = None
-    games: int | None = None
-    mmr: int | None = None
+    # The w3champions API can send fractional numbers for these columns;
+    # MySQL rounded them on insert for the old DTOs.
+    wc3_season: Annotated[int | None, RoundToInt] = None
+    wins: Annotated[int | None, RoundToInt] = None
+    losses: Annotated[int | None, RoundToInt] = None
+    games: Annotated[int | None, RoundToInt] = None
+    mmr: Annotated[int | None, RoundToInt] = None
     winrate: float | None = None
     # Race member when loaded from the DB / w3champions sync, plain string
     # from request JSON - exactly like the old DTO. Services compare members.
     race: Race | str | None = None
-    league: int | None = None
+    league: Annotated[int | None, RoundToInt] = None
     user_id: int | None = None
 
     def to_db_dict(self):

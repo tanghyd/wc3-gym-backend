@@ -1,7 +1,9 @@
 from typing import Annotated
 
+from pydantic import field_serializer
+
 from src.database.model.DBEnums import Race
-from src.schemas.base import APISchema, EmptyToNone
+from src.schemas.base import APISchema, DropNoneItems
 from src.schemas.season import Season
 from src.schemas.team import Team
 from src.schemas.user import User
@@ -23,13 +25,21 @@ class FantasyTeam(APISchema):
     drafted_team_id: int | None = None
     drafted_team: Team | None = None
     drafted_race: Race | str | None = None
-    drafted_players: Annotated[list[User] | None, EmptyToNone] = None
+    # The attribute keeps the list it was given (the import endpoint iterates
+    # it), while the JSON output shows null for an empty list - exactly like
+    # the old DTO. So the empty-to-None step lives in the serializer, not in
+    # a validator.
+    drafted_players: Annotated[list[User] | None, DropNoneItems] = None
     player_points: int | None = None
     bench_points: int | None = None
     team_points: int | None = None
     race_points: int | None = None
     bet_points: int | None = None
     total_points: int | None = None
+
+    @field_serializer('drafted_players', when_used='json')
+    def _drafted_players_json(self, value):
+        return [user.to_dict() for user in value] if value else None
 
     def to_db_dict(self):
         return self.model_dump(include=DB_FIELDS)
