@@ -14,10 +14,10 @@ DB_FIELDS = {
 
 class Season(APISchema):
     id: int | None = None
-    name: str | None = None
+    name: Annotated[str | None, NumToStr] = None
     number_weeks: int | None = None
     series_per_week: int | None = None
-    pick_ban: str | None = None
+    pick_ban: Annotated[str | None, NumToStr] = None
     start_date: Annotated[IsoDate | None, LenientDate] = None
     end_date: Annotated[IsoDate | None, LenientDate] = None
     maps: Annotated[list[Map] | None, EmptyToNone] = None

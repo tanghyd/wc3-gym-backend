@@ -1,11 +1,15 @@
-from src.schemas.base import APISchema
+from typing import Annotated
+
+from src.schemas.base import APISchema, NumToStr
 
 
 class Map(APISchema):
     id: int | None = None
-    name: str | None = None
-    shortname: str | None = None
-    image: str | None = None
+    # The xlsx import passes these cells straight through, so a numeric
+    # map name or shortname arrives as a number.
+    name: Annotated[str | None, NumToStr] = None
+    shortname: Annotated[str | None, NumToStr] = None
+    image: Annotated[str | None, NumToStr] = None
 
     @classmethod
     def from_dbmap(cls, map):

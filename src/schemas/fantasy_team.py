@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import field_serializer
 
 from src.database.model.DBEnums import Race
-from src.schemas.base import APISchema, DropNoneItems
+from src.schemas.base import APISchema, DropNoneItems, NumToStr
 from src.schemas.season import Season
 from src.schemas.team import Team
 from src.schemas.user import User
@@ -17,7 +17,7 @@ DB_FIELDS = {
 
 class FantasyTeam(APISchema):
     id: int | None = None
-    name: str | None = None
+    name: Annotated[str | None, NumToStr] = None
     season_id: int | None = None
     season: Season | None = None
     captain_id: int | None = None

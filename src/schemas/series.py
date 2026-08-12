@@ -1,5 +1,7 @@
 
-from src.schemas.base import APISchema, IsoDateTime
+from typing import Annotated
+
+from src.schemas.base import APISchema, IsoDateTime, NumToStr
 from src.schemas.match import Match
 from src.schemas.user import User
 
@@ -15,7 +17,7 @@ class Series(APISchema):
     match_id: int | None = None
     match: Match | None = None
     date_time: IsoDateTime | None = None
-    caster: str | None = None
+    caster: Annotated[str | None, NumToStr] = None
     player1_id: int | None = None
     player1: User | None = None
     player2_id: int | None = None
