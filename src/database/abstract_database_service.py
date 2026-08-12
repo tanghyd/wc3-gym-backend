@@ -28,17 +28,10 @@ class AbstractDatabaseService(ABC):
 
     @contextmanager
     def get_session(self):
-        # One session and one transaction per call. The transaction commits
-        # when the block ends without an error, rolls back when there is an
-        # error, and the session always closes.
-        # Rules for callers:
-        # - Model helpers and service code must not commit; they flush.
-        # - Do not call another method that opens its own session while a
-        #   session is open. Each call is a separate transaction; pass the
-        #   session as an argument to share one transaction.
-        # SQLAlchemyError raised anywhere in the block, including at commit,
-        # is logged here with a traceback and raised as DBException. This is
-        # the only place that translates database errors.
+        """One transaction per call: commit on success, roll back on error,
+        always close. Callers must not commit; to share a transaction, pass
+        the session instead of opening a new one. Database errors become
+        DBException here and nowhere else."""
         try:
             with self.Session.begin() as session:
                 yield session
