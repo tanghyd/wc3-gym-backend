@@ -1,10 +1,10 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
 
-from src.database.model.DBUser import DBUser
+from src.models.user import DBUser
 from src.schemas.user import User
 from src.schemas.w3c_stats import W3CStats
-from src.database.model.DBW3CStats import DBW3CStats
+from src.models.w3c_stats import DBW3CStats
 from src.schemas.user_team_season_stats import UserTeamSeasonStats
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -72,7 +72,7 @@ class UserDBService(AbstractDatabaseService):
 
     def getAll(self):
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBUserTeamSeason
+            from src.models.relationships import DBUserTeamSeason
             result = []
             # Eager load related entities, disable nested loading
             users = session.scalars(

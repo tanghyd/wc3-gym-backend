@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.model.DBModel import DBModel
+from src.models.base import DBModel
 
 class DBKothEvent(DBModel):
     __tablename__ = 'koth_events'

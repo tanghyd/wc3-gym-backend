@@ -1,6 +1,6 @@
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.model.DBModel import DBModel
+from src.models.base import DBModel
 
 class DBMap(DBModel):
     __tablename__ = 'maps'

@@ -1,7 +1,7 @@
 from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.model.DBModel import DBModel
-from src.database.model.DBEnums import Race
+from src.models.base import DBModel
+from src.models.enums import Race
 
 class DBKothSignup(DBModel):
     __tablename__ = 'koth_signups'

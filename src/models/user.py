@@ -1,8 +1,8 @@
 from sqlalchemy import Enum, String
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
-from src.database.model.DBModel import DBModel
-from src.database.model.DBEnums import Race
-from src.database.model.DBRelationships import DBUserTeamSeason
+from src.models.base import DBModel
+from src.models.enums import Race
+from src.models.relationships import DBUserTeamSeason
 
 class DBUser(DBModel):
     __tablename__ = 'users'
@@ -25,8 +25,8 @@ class DBUser(DBModel):
 
     @classmethod
     def updateUserTeamSeasonStats(cls, session: Session, season_stats):
-        from src.database.model.DBSeason import DBSeason
-        from src.database.model.DBTeam import DBTeam
+        from src.models.season import DBSeason
+        from src.models.team import DBTeam
         team = session.get(DBTeam, season_stats.team_id)
         if not team:
             raise Exception(f"Team not found by id: {season_stats.team_id}")

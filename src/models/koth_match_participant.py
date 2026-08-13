@@ -1,6 +1,6 @@
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.model.DBModel import DBModel
+from src.models.base import DBModel
 
 class DBKothMatchParticipant(DBModel):
     __tablename__ = 'koth_match_participants'

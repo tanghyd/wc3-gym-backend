@@ -1,6 +1,6 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBTeam import DBTeam
+from src.models.team import DBTeam
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from custom_exceptions import DBException
@@ -59,7 +59,7 @@ class TeamDBService(AbstractDatabaseService):
 
     def get(self, team_id):
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBTeamSeason
+            from src.models.relationships import DBTeamSeason
             # Eager load related entities, disable nested loading
             team = session.scalars(
                 select(DBTeam)
@@ -77,8 +77,8 @@ class TeamDBService(AbstractDatabaseService):
 
     def get_with_nested_users(self, team_id):
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBUserTeamSeason
-            from src.database.model.DBUser import DBUser
+            from src.models.relationships import DBUserTeamSeason
+            from src.models.user import DBUser
             # Eager load user_seasons and their users with w3c_stats and team_seasons (gnl_stats) with season info
             team = session.scalars(
                 select(DBTeam)
@@ -97,8 +97,8 @@ class TeamDBService(AbstractDatabaseService):
     def get_with_nested_users_by_season(self, team_id, season_id):
         """Get team with users filtered by specific season at database level"""
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBUserTeamSeason, DBTeamSeason
-            from src.database.model.DBUser import DBUser
+            from src.models.relationships import DBUserTeamSeason, DBTeamSeason
+            from src.models.user import DBUser
             # Eager load only user_seasons for the specified season, including w3c_stats and team_seasons (gnl_stats) with season info
             team = session.scalars(
                 select(DBTeam)
@@ -195,8 +195,8 @@ class TeamDBService(AbstractDatabaseService):
 
     def getAll_with_nested_users(self):
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBUserTeamSeason, DBTeamSeason
-            from src.database.model.DBUser import DBUser
+            from src.models.relationships import DBUserTeamSeason, DBTeamSeason
+            from src.models.user import DBUser
             result = []
             # Eager load user_seasons and their users with w3c_stats and team_seasons (gnl_stats) with season info
             # Also eager load coaches from season_info

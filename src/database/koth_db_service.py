@@ -1,9 +1,9 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBKothEvent import DBKothEvent
-from src.database.model.DBKothSignup import DBKothSignup
-from src.database.model.DBKothMatch import DBKothMatch
-from src.database.model.DBKothMatchParticipant import DBKothMatchParticipant
+from src.models.koth_event import DBKothEvent
+from src.models.koth_signup import DBKothSignup
+from src.models.koth_match import DBKothMatch
+from src.models.koth_match_participant import DBKothMatchParticipant
 from src.schemas.koth_event import KothEvent
 from src.schemas.koth_signup import KothSignup
 from src.schemas.koth_match import KothMatch

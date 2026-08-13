@@ -1,7 +1,7 @@
 from decimal import Decimal
 from sqlalchemy import DECIMAL, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.model.DBModel import DBModel
+from src.models.base import DBModel
 
 class DBPlayerCareerStats(DBModel):
     __tablename__ = 'player_career_stats'

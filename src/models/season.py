@@ -1,13 +1,13 @@
 from datetime import date
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
-from src.database.model.DBModel import DBModel
-from src.database.model.DBRelationships import DBTeamSeason
-from src.database.model.DBRelationships import DBMapSeason
-from src.database.model.DBTeam import DBTeam
-from src.database.model.DBMap import DBMap
-from src.database.model.DBRelationships import DBUserSeasonSignup
-from src.database.model.DBUser import DBUser
+from src.models.base import DBModel
+from src.models.relationships import DBTeamSeason
+from src.models.relationships import DBMapSeason
+from src.models.team import DBTeam
+from src.models.map import DBMap
+from src.models.relationships import DBUserSeasonSignup
+from src.models.user import DBUser
 
 
 class DBSeason(DBModel):

@@ -1,6 +1,6 @@
 from sqlalchemy import ForeignKey, JSON, select
 from sqlalchemy.orm import Mapped, Session, joinedload, mapped_column, relationship
-from src.database.model.DBModel import DBModel
+from src.models.base import DBModel
 
 class DBUserTeamSeason(DBModel):
     __tablename__ = 'user_team_season'

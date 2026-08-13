@@ -1,9 +1,9 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBDraftSeries import DBDraftSeries
-from src.database.model.DBUser import DBUser
-from src.database.model.DBRelationships import DBUserTeamSeason
-from src.database.model.DBMatch import DBMatch
+from src.models.draft_series import DBDraftSeries
+from src.models.user import DBUser
+from src.models.relationships import DBUserTeamSeason
+from src.models.match import DBMatch
 from sqlalchemy import delete, select
 from sqlalchemy.orm import joinedload
 from custom_exceptions import DBException

@@ -1,7 +1,7 @@
 from sqlalchemy import Enum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.model.DBModel import DBModel
-from src.database.model.DBEnums import Race
+from src.models.base import DBModel
+from src.models.enums import Race
 
 
 class DBW3CStats(DBModel):

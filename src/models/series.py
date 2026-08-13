@@ -1,8 +1,8 @@
 from datetime import datetime
 from sqlalchemy import ForeignKey, String, and_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
-from src.database.model.DBModel import DBModel
-from src.database.model.DBMatch import DBMatch
+from src.models.base import DBModel
+from src.models.match import DBMatch
 
 class DBSeries(DBModel):
     __tablename__ = 'series'
@@ -29,8 +29,8 @@ class DBSeries(DBModel):
     @classmethod
     def searchForSeasonAndPlayday(cls, session: Session, season_id, playday, filters):
         from sqlalchemy.orm import joinedload
-        from src.database.model.DBUser import DBUser
-        from src.database.model.DBRelationships import DBUserTeamSeason
+        from src.models.user import DBUser
+        from src.models.relationships import DBUserTeamSeason
 
         stmt = select(cls).options(
             joinedload(cls.match).joinedload(DBMatch.team1),
@@ -49,8 +49,8 @@ class DBSeries(DBModel):
     @classmethod
     def searchForSeason(cls, session: Session, season_id, filters):
         from sqlalchemy.orm import joinedload
-        from src.database.model.DBUser import DBUser
-        from src.database.model.DBRelationships import DBUserTeamSeason
+        from src.models.user import DBUser
+        from src.models.relationships import DBUserTeamSeason
 
         stmt = select(cls).options(
             joinedload(cls.match).joinedload(DBMatch.team1),

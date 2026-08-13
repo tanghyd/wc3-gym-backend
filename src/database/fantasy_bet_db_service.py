@@ -2,8 +2,8 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBFantasyBet import DBFantasyBet
-from src.database.model.DBSeries import DBSeries
+from src.models.fantasy_bet import DBFantasyBet
+from src.models.series import DBSeries
 from custom_exceptions import DBException
 from src.util.query_util import QueryUtil
 from src.schemas.fantasy_bet import FantasyBet

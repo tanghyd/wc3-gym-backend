@@ -1,6 +1,6 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBSettings import DBSettings
+from src.models.settings import DBSettings
 from custom_exceptions import DBException
 from src.schemas.settings import Settings
 

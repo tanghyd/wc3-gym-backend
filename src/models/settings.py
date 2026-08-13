@@ -1,6 +1,6 @@
 from sqlalchemy import String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
-from src.database.model.DBModel import DBModel
+from src.models.base import DBModel
 
 class DBSettings(DBModel):
     __tablename__ = 'settings'

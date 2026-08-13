@@ -1,8 +1,8 @@
 from sqlalchemy import LargeBinary, String
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
-from src.database.model.DBModel import DBModel
-from src.database.model.DBUser import DBUser
-from src.database.model.DBRelationships import DBUserTeamSeason
+from src.models.base import DBModel
+from src.models.user import DBUser
+from src.models.relationships import DBUserTeamSeason
 
 
 class DBTeam(DBModel):
@@ -20,7 +20,7 @@ class DBTeam(DBModel):
 
     @classmethod
     def addPlayers(cls, session: Session, obj_id, season_id, user_ids):
-        from src.database.model.DBSeason import DBSeason
+        from src.models.season import DBSeason
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Team not found by id: {obj_id}")
@@ -40,7 +40,7 @@ class DBTeam(DBModel):
 
     @classmethod
     def removePlayers(cls, session: Session, obj_id, season_id, user_ids):
-        from src.database.model.DBSeason import DBSeason
+        from src.models.season import DBSeason
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Team not found by id: {obj_id}")
@@ -69,8 +69,8 @@ class DBTeam(DBModel):
     @classmethod
     def setCoaches(cls, session: Session, team_id, season_id, user_ids):
         """Set coaches for a team in a season (up to 3)."""
-        from src.database.model.DBSeason import DBSeason
-        from src.database.model.DBRelationships import DBTeamSeason
+        from src.models.season import DBSeason
+        from src.models.relationships import DBTeamSeason
 
         team = session.get(cls, team_id)
         if not team:

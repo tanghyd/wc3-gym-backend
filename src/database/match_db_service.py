@@ -1,6 +1,6 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBMatch import DBMatch
+from src.models.match import DBMatch
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from custom_exceptions import DBException

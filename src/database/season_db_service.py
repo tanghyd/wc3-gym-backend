@@ -1,6 +1,6 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
-from src.database.model.DBSeason import DBSeason
+from src.models.season import DBSeason
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, noload
 from custom_exceptions import DBException
@@ -32,8 +32,8 @@ class SeasonDBService(AbstractDatabaseService):
 
     def get(self, season_id):
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBMapSeason
-            from src.database.model.DBMap import DBMap
+            from src.models.relationships import DBMapSeason
+            from src.models.map import DBMap
             # Eager load related entities, disable nested loading except for maps
             season = session.scalars(
                 select(DBSeason)
@@ -54,8 +54,8 @@ class SeasonDBService(AbstractDatabaseService):
     def getAll(self):
         with self.get_session() as session:
             result = []
-            from src.database.model.DBRelationships import DBMapSeason
-            from src.database.model.DBMap import DBMap
+            from src.models.relationships import DBMapSeason
+            from src.models.map import DBMap
             # Eager load related entities, disable nested loading except for maps
             seasons = session.scalars(
                 select(DBSeason)
@@ -80,8 +80,8 @@ class SeasonDBService(AbstractDatabaseService):
     def search(self, query):
         with self.get_session() as session:
             result = []
-            from src.database.model.DBRelationships import DBMapSeason
-            from src.database.model.DBMap import DBMap
+            from src.models.relationships import DBMapSeason
+            from src.models.map import DBMap
             filter = QueryUtil.convertQueryToDBFilter(DBSeason, query)
             # Eager load related entities, disable nested loading except for maps
             seasons = session.scalars(
@@ -134,8 +134,8 @@ class SeasonDBService(AbstractDatabaseService):
 
     def getSignedUpUsers(self, season_id):
         with self.get_session() as session:
-            from src.database.model.DBRelationships import DBUserSeasonSignup
-            from src.database.model.DBUser import DBUser
+            from src.models.relationships import DBUserSeasonSignup
+            from src.models.user import DBUser
             from src.schemas.user import User
                 
             # Eager load signup users with their user data and w3c_stats

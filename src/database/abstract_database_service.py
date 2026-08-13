@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
-from src.database.model.DBModel import Base
+from src.models.base import Base
 from custom_exceptions import DBException
 
 logger = logging.getLogger(__name__)
