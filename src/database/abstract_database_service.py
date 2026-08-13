@@ -1,7 +1,13 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+import logging
 
-from src.database.engine import session_scope
+from sqlalchemy.exc import SQLAlchemyError
+
+from src.database.engine import Session
+from custom_exceptions import DBException
+
+logger = logging.getLogger(__name__)
 
 
 class AbstractDatabaseService(ABC):
@@ -16,28 +22,28 @@ class AbstractDatabaseService(ABC):
         """Store the session factory that this service uses.
 
         The argument is keyword only. These services took a database URL
-        before. A caller that still passes one now fails here, with a
-        clear TypeError, instead of much later on the first query.
+        before, so a caller that still passes one fails here with a clear
+        TypeError, and not later on the first query.
 
         Args:
             session_factory: A factory to use instead of the factory of
-                this process. Tests pass their own factory to work on
+                this process. A test passes its own factory to work on
                 another database. Leave it empty in the application.
         """
-        self._session_factory = session_factory
+        self.Session = session_factory or Session
 
     @contextmanager
     def get_session(self):
-        """One transaction for each call.
-
-        The block commits on success, rolls back on error, and always
-        closes the session. Callers must not commit. To share a
-        transaction, pass the session instead of opening a new one.
-        Database errors become DBException in session_scope and nowhere
-        else.
-        """
-        with session_scope(self._session_factory) as session:
-            yield session
+        """One transaction per call: commit on success, roll back on error,
+        always close. Callers must not commit; to share a transaction, pass
+        the session instead of opening a new one. Database errors become
+        DBException here and nowhere else."""
+        try:
+            with self.Session.begin() as session:
+                yield session
+        except SQLAlchemyError as e:
+            logger.exception("Database error")
+            raise DBException(f"Database error: {e}") from e
 
     @abstractmethod
     def add(self, **kwargs):

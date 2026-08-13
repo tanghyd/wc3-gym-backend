@@ -103,37 +103,28 @@ The project uses VS Code tasks for Docker builds and runs. The configuration is 
 | `FRONTEND_URL` | Admin frontend URL for CORS configuration | `http://localhost:5003` |
 | `BOT_WEBHOOK_URL` | Discord bot webhook endpoint for series updates | `http://host.docker.internal:3001/webhook/series-updated` |
 
-**Database connection settings (all optional):**
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_POOL_SIZE` | Connections that the pool keeps open between requests | `5` |
-| `DB_MAX_OVERFLOW` | Extra connections that the pool may open for a burst | `10` |
-| `DB_POOL_TIMEOUT` | Seconds to wait for a free connection before the request fails | `30` |
-| `DB_POOL_RECYCLE` | Seconds before the pool replaces a connection. Keep it below the MySQL `wait_timeout` | `3600` |
-| `DB_CREATE_ALL` | Create missing tables at start up. Set to `false` when another tool owns the schema | `true` |
-| `DB_ECHO` | Write every SQL statement to the log. Use it for debugging only | `false` |
-| `GUNICORN_WORKERS` | Number of worker processes | `1` |
-| `GUNICORN_PRELOAD` | Load the application one time in the parent process to save memory | `false` |
-
 **How many database connections the application uses:**
 
 The whole process shares one engine and one connection pool, which
-`src/database/engine.py` holds. Each gunicorn worker is a separate process
-with its own pool, so the workers multiply the connections:
+`src/database/engine.py` holds. The pool keeps the SQLAlchemy defaults, so
+it allows 5 connections and 10 more during a burst. Each gunicorn worker is
+a separate process with a pool of its own, so the workers multiply that
+number:
 
 ```
-GUNICORN_WORKERS x (DB_POOL_SIZE + DB_MAX_OVERFLOW) <= MySQL max_connections
+workers x 15 <= MySQL max_connections
 ```
 
-MySQL 5.7 accepts 151 connections by default. With the defaults above, one
-worker uses at most 15 connections. Check `SHOW VARIABLES LIKE 'max_connections'`
-on the server before you raise `GUNICORN_WORKERS`.
+MySQL 5.7 accepts 151 connections by default, which leaves room for ten
+workers. Run `SHOW VARIABLES LIKE 'max_connections'` on the server before
+you raise the number of workers.
 
-Each worker checks the schema when it starts. Once the tables exist, that
-check creates nothing. On a server where the tables already exist you can
-set `DB_CREATE_ALL=false`, so the application needs no rights to change
-tables and every worker starts without touching the schema.
+`gunicorn.conf.py` holds the gunicorn settings. To change one, set
+`GUNICORN_CMD_ARGS`, which gunicorn reads by itself:
+
+```bash
+GUNICORN_CMD_ARGS="--workers=4"
+```
 
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container

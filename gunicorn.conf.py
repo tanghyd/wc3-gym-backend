@@ -1,62 +1,36 @@
 """Gunicorn settings for the backend.
 
 Gunicorn reads this file on its own when it starts in the directory that
-holds the file. The defaults match the values that the Dockerfile used
-before, so the behaviour does not change until an operator sets one of
-the environment variables.
+holds the file. The values below are the ones that the Dockerfile passed
+before. To change one, set GUNICORN_CMD_ARGS, which gunicorn reads by
+itself:
 
-Read src/database/engine.py before a change to GUNICORN_WORKERS. Every
-worker is a process with its own connection pool, so the number of
-workers multiplies the number of database connections:
+    GUNICORN_CMD_ARGS="--workers=4"
 
-    workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW) <= max_connections
+Read src/database/engine.py before a change to the number of workers.
+Every worker is a process with a connection pool of its own, so the
+workers multiply the number of database connections.
 """
 
-import os
-
-
-def _int_env(name, default):
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
-
-
-def _bool_env(name, default):
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    return raw.strip().lower() in ("1", "true", "yes", "on")
-
-
-bind = os.getenv("GUNICORN_BIND", "0.0.0.0:5002")
-workers = _int_env("GUNICORN_WORKERS", 1)
-timeout = _int_env("GUNICORN_TIMEOUT", 1250)
-
-# When preload is on, the parent process imports the application one time
-# and the workers inherit it. This saves memory, and post_fork below keeps
-# the database connections correct.
-preload_app = _bool_env("GUNICORN_PRELOAD", False)
+bind = "0.0.0.0:5002"
+workers = 1
+timeout = 1250
 
 
 def post_fork(server, worker):
     """Give each worker process its own database connections.
 
     A database connection is a socket, and two processes must never use
-    the same socket. With preload on, the parent process holds the engine
+    the same socket. With --preload the parent process holds the engine
     and the worker inherits it. This hook drops the inherited connections
     in the worker and leaves the sockets of the parent open, so the worker
     opens fresh connections of its own.
 
-    This hook must not import the application. With preload off, gunicorn
+    This hook must not import the application. Without --preload gunicorn
     runs this hook before the worker loads the application, so an import
-    here would start the whole application inside the hook, before the
-    worker can handle signals. The lookup in sys.modules therefore finds
-    the engine only when the parent already loaded it, which is the only
-    case that needs the call.
+    here would start the whole application inside the hook. The lookup in
+    sys.modules therefore finds the engine only when the parent already
+    loaded it, which is the only case that needs the call.
     """
     import sys
 

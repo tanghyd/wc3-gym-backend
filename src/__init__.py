@@ -1,6 +1,17 @@
 import logging
 import os
 from dotenv import load_dotenv
+
+# Read the .env file and set up logging before the imports below, because
+# src.database.engine builds the engine when it is imported and reads its
+# settings from the environment.
+load_dotenv()
+
+_log_level = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO)
+logging.basicConfig(level=_log_level)
+
+logger = logging.getLogger(__name__)
+
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -53,15 +64,6 @@ from src.api.fantasy_api import fantasy_blueprint
 from src.api.config_api import config_blueprint
 from src.api.koth_api import koth_blueprint
 from src.api.stats_api import stats_blueprint
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Configure logging
-_log_level = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO)
-logging.basicConfig(level=_log_level)
-
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
