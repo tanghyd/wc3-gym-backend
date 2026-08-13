@@ -1,4 +1,4 @@
-[pytest]
-testpaths = tests
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 # The repo root on sys.path, so `pytest` finds src without an install.
-pythonpath = .
+pythonpath = ["."]
