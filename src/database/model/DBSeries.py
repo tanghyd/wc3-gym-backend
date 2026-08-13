@@ -1,39 +1,38 @@
-from sqlalchemy import Column, Integer, String, Sequence, ForeignKey, DateTime, Boolean, or_, and_
-from sqlalchemy.orm import relationship
+from datetime import datetime
+from sqlalchemy import ForeignKey, String, and_, select
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 from src.database.model.DBModel import DBModel
 from src.database.model.DBMatch import DBMatch
-from sqlalchemy.orm.session import Session
-from custom_exceptions import DBException
 
 class DBSeries(DBModel):
     __tablename__ = 'series'
-    id = Column(Integer, Sequence(f'{__name__.lower()}_id_seq'), primary_key=True)
-    match_id = Column(Integer, ForeignKey('matches.id', ondelete='CASCADE'), nullable=False)
-    date_time = Column(DateTime)
-    caster = Column(String(50))
-    player1_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    player2_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    player1_score = Column(Integer)
-    player2_score = Column(Integer)
-    player1_points = Column(Integer)
-    player2_points = Column(Integer)
-    host_player_id = Column(Integer, nullable=False)
-    is_fantasy_match = Column(Boolean)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey('matches.id', ondelete='CASCADE'))
+    date_time: Mapped[datetime | None] = mapped_column()
+    caster: Mapped[str | None] = mapped_column(String(50))
+    player1_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
+    player2_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
+    player1_score: Mapped[int | None] = mapped_column()
+    player2_score: Mapped[int | None] = mapped_column()
+    player1_points: Mapped[int | None] = mapped_column()
+    player2_points: Mapped[int | None] = mapped_column()
+    host_player_id: Mapped[int] = mapped_column()
+    is_fantasy_match: Mapped[bool | None] = mapped_column()
 
-    match = relationship("DBMatch", foreign_keys=[match_id])
-    player1 = relationship("DBUser", foreign_keys=[player1_id])
-    player2 = relationship("DBUser", foreign_keys=[player2_id])
+    match: Mapped['DBMatch'] = relationship(foreign_keys=[match_id])
+    player1: Mapped['DBUser'] = relationship(foreign_keys=[player1_id])
+    player2: Mapped['DBUser'] = relationship(foreign_keys=[player2_id])
 
     def to_dict(self):
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
-    
+
     @classmethod
     def searchForSeasonAndPlayday(cls, session: Session, season_id, playday, filters):
         from sqlalchemy.orm import joinedload
         from src.database.model.DBUser import DBUser
         from src.database.model.DBRelationships import DBUserTeamSeason
-        
-        query = session.query(cls).options(
+
+        stmt = select(cls).options(
             joinedload(cls.match).joinedload(DBMatch.team1),
             joinedload(cls.match).joinedload(DBMatch.team2),
             joinedload(cls.player1).joinedload(DBUser.w3c_stats),
@@ -41,20 +40,19 @@ class DBSeries(DBModel):
             joinedload(cls.player2).joinedload(DBUser.w3c_stats),
             joinedload(cls.player2).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season)
         )
-        
-        if filters is None:
-            query = query.filter(cls.match.has(and_(DBMatch.season_id == season_id, DBMatch.playday == playday)))
-        else:
-            query = query.filter(cls.match.has(and_(DBMatch.season_id == season_id, DBMatch.playday == playday))).filter(filters)
-        return query.all()
-    
+
+        stmt = stmt.where(cls.match.has(and_(DBMatch.season_id == season_id, DBMatch.playday == playday)))
+        if filters is not None:
+            stmt = stmt.where(filters)
+        return session.scalars(stmt).unique().all()
+
     @classmethod
     def searchForSeason(cls, session: Session, season_id, filters):
         from sqlalchemy.orm import joinedload
         from src.database.model.DBUser import DBUser
         from src.database.model.DBRelationships import DBUserTeamSeason
-        
-        query = session.query(cls).options(
+
+        stmt = select(cls).options(
             joinedload(cls.match).joinedload(DBMatch.team1),
             joinedload(cls.match).joinedload(DBMatch.team2),
             joinedload(cls.player1).joinedload(DBUser.w3c_stats),
@@ -62,9 +60,8 @@ class DBSeries(DBModel):
             joinedload(cls.player2).joinedload(DBUser.w3c_stats),
             joinedload(cls.player2).joinedload(DBUser.team_seasons).joinedload(DBUserTeamSeason.season)
         )
-        
-        if filters is None:
-            query = query.filter(cls.match.has(DBMatch.season_id == season_id))
-        else:
-            query = query.filter(cls.match.has(DBMatch.season_id == season_id)).filter(filters)
-        return query.all()
+
+        stmt = stmt.where(cls.match.has(DBMatch.season_id == season_id))
+        if filters is not None:
+            stmt = stmt.where(filters)
+        return session.scalars(stmt).unique().all()

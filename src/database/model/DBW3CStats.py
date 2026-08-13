@@ -1,19 +1,19 @@
-from sqlalchemy import Column, Integer, String, Sequence, Enum, Float, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Enum, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database.model.DBModel import DBModel
 from src.database.model.DBEnums import Race
 
 
 class DBW3CStats(DBModel):
     __tablename__ = 'w3cstats'
-    id = Column(Integer, Sequence(f'{__name__.lower()}_id_seq'), primary_key=True)
-    wc3_season = Column(Integer, nullable=False)
-    wins = Column(Integer)
-    losses = Column(Integer)
-    games = Column(Integer)
-    mmr = Column(Integer)
-    winrate = Column(Float)
-    race = Column(Enum(Race))
-    league = Column(Integer)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    user = relationship('DBUser', back_populates='w3c_stats')
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wc3_season: Mapped[int] = mapped_column()
+    wins: Mapped[int | None] = mapped_column()
+    losses: Mapped[int | None] = mapped_column()
+    games: Mapped[int | None] = mapped_column()
+    mmr: Mapped[int | None] = mapped_column()
+    winrate: Mapped[float | None] = mapped_column()
+    race: Mapped[Race | None] = mapped_column(Enum(Race))
+    league: Mapped[int | None] = mapped_column()
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    user: Mapped['DBUser'] = relationship(back_populates='w3c_stats')

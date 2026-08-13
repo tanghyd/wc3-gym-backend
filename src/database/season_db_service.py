@@ -1,6 +1,7 @@
 import logging
 from src.database.abstract_database_service import AbstractDatabaseService
 from src.database.model.DBSeason import DBSeason
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload, noload
 from custom_exceptions import DBException
 from src.schemas.season import Season
@@ -34,14 +35,16 @@ class SeasonDBService(AbstractDatabaseService):
             from src.database.model.DBRelationships import DBMapSeason
             from src.database.model.DBMap import DBMap
             # Eager load related entities, disable nested loading except for maps
-            season = session.query(DBSeason)\
+            season = session.scalars(
+                select(DBSeason)
                 .options(
                     joinedload(DBSeason.user_teams).noload('*'),
                     joinedload(DBSeason.teams).noload('*'),
                     joinedload(DBSeason.maps).joinedload(DBMapSeason.map),
                     noload(DBSeason.signup_users)
-                )\
-                .filter_by(id=season_id).first()
+                )
+                .where(DBSeason.id == season_id)
+            ).unique().first()
             # Example usage
             if not season:
                 raise DBException("Season could not be found!")
@@ -54,13 +57,15 @@ class SeasonDBService(AbstractDatabaseService):
             from src.database.model.DBRelationships import DBMapSeason
             from src.database.model.DBMap import DBMap
             # Eager load related entities, disable nested loading except for maps
-            seasons = session.query(DBSeason)\
+            seasons = session.scalars(
+                select(DBSeason)
                 .options(
                     joinedload(DBSeason.user_teams).noload('*'),
                     joinedload(DBSeason.teams).noload('*'),
                     joinedload(DBSeason.maps).joinedload(DBMapSeason.map),
                     noload(DBSeason.signup_users)
-                ).all()
+                )
+            ).unique().all()
             for season in seasons:
                 result.append(Season.from_dbseason(season))
             return result
@@ -79,14 +84,16 @@ class SeasonDBService(AbstractDatabaseService):
             from src.database.model.DBMap import DBMap
             filter = QueryUtil.convertQueryToDBFilter(DBSeason, query)
             # Eager load related entities, disable nested loading except for maps
-            seasons = session.query(DBSeason)\
+            seasons = session.scalars(
+                select(DBSeason)
                 .options(
                     joinedload(DBSeason.user_teams).noload('*'),
                     joinedload(DBSeason.teams).noload('*'),
                     joinedload(DBSeason.maps).joinedload(DBMapSeason.map),
                     noload(DBSeason.signup_users)
-                )\
-                .filter(filter).all() if filter is not None else []
+                )
+                .where(filter)
+            ).unique().all() if filter is not None else []
             if not seasons:
                 logger.debug(f"No seasons found by searchcriteria: {query}")
                 return result
@@ -132,12 +139,14 @@ class SeasonDBService(AbstractDatabaseService):
             from src.schemas.user import User
                 
             # Eager load signup users with their user data and w3c_stats
-            season = session.query(DBSeason)\
+            season = session.scalars(
+                select(DBSeason)
                 .options(
                     joinedload(DBSeason.signup_users).joinedload(DBUserSeasonSignup.user).joinedload(DBUser.w3c_stats).noload('*'),
                     joinedload(DBSeason.signup_users).joinedload(DBUserSeasonSignup.user).joinedload(DBUser.team_seasons).noload('*')
-                )\
-                .filter_by(id=season_id).first()
+                )
+                .where(DBSeason.id == season_id)
+            ).unique().first()
                 
             if not season:
                 raise DBException("Season could not be found!")
