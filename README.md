@@ -126,6 +126,11 @@ you raise the number of workers.
 GUNICORN_CMD_ARGS="--workers=4"
 ```
 
+That file loads the application one time in the parent process, so the
+schema check also runs one time. Keep that setting on. With it off, every
+worker checks the schema at the same moment, and on a new database one
+worker creates a table while another fails with "table already exists".
+
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container
 - If MySQL is running locally (not in Docker), use `host.docker.internal:3306`

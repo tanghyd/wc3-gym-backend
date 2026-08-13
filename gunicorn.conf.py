@@ -16,6 +16,20 @@ bind = "0.0.0.0:5002"
 workers = 1
 timeout = 1250
 
+# Load the application one time in the parent process, and let the workers
+# inherit it. Two reasons:
+#
+#   1. The schema check in src/__init__.py then runs one time. Without
+#      this, every worker checks the schema at the same moment, and on a
+#      new database they race: one worker creates a table, and the other
+#      fails with "table already exists" and dies.
+#   2. The workers share the memory of the parent until they write to it,
+#      which matters on a small server.
+#
+# post_fork below gives each worker its own database connections, which a
+# forked process must have.
+preload_app = True
+
 
 def post_fork(server, worker):
     """Give each worker process its own database connections.
