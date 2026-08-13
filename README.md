@@ -4,7 +4,7 @@ Flask-based REST API for GNL (Gym Newbie League) esports platform providing JWT-
 
 ## Prerequisites
 
-- **uv** - [Install uv](https://docs.astral.sh/uv/getting-started/installation/) - manages the Python version, the virtual environment, and the dependencies
+- **uv** - [Install uv](https://docs.astral.sh/uv/getting-started/installation/) - manages the Python version, the virtual environment, and the dependencies; new to uv? See the [getting started guide](https://docs.astral.sh/uv/getting-started/)
 - **Docker Desktop** - [Install Docker](https://www.docker.com/products/docker-desktop)
 - **Visual Studio Code** - [Download VS Code](https://code.visualstudio.com/)
 - **VS Code Extensions:**
@@ -59,9 +59,7 @@ This one command installs a compatible Python, creates `.venv`, and installs the
 
 VS Code will prompt to select `.venv` as the workspace interpreter - click "Yes".
 
-Dependencies live in `pyproject.toml`: runtime packages under `[project] dependencies`, development-only packages under `[dependency-groups] dev`. After editing either list, run `uv sync` again and commit the updated `uv.lock`.
-
-**Note:** the Docker image still installs from `requirements.txt`. Until the Dockerfile moves to uv, a runtime dependency change goes in both `pyproject.toml` and `requirements.txt`.
+Dependencies live in `pyproject.toml`: runtime packages under `[project] dependencies`, development-only packages under `[dependency-groups] dev`. After editing either list, run `uv sync` again and commit the updated `uv.lock`. The Docker image installs from the same `uv.lock`, so one edit covers both local development and deployment.
 
 ### 3. Configure tasks.json
 
@@ -172,7 +170,8 @@ taskkill /PID <pid> /F
 ```
 backend/
 ├── app.py                  # Flask application entry point
-├── requirements.txt        # Python dependencies
+├── pyproject.toml          # Project metadata and dependencies
+├── uv.lock                 # Pinned dependency versions (managed by uv)
 ├── Dockerfile             # Docker image definition
 ├── .vscode/
 │   └── tasks.json         # VS Code build/run tasks

@@ -22,9 +22,6 @@ dependencies = [
     "pydantic>=2,<3",
 ]
 
-# The Docker image still installs from requirements.txt. Until the
-# Dockerfile moves to uv, a dependency change goes in both files.
-
 [dependency-groups]
 dev = ["pytest"]
 
