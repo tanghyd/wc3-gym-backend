@@ -1,4 +1,4 @@
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-# The repo root on sys.path, so `pytest` finds src without an install.
+# Not a default: the pytest console script does not put the repo root on
+# sys.path, and the tests import src. python -m pytest works without this.
 pythonpath = ["."]
