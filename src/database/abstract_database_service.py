@@ -13,23 +13,15 @@ logger = logging.getLogger(__name__)
 class AbstractDatabaseService(ABC):
     """Base class for the services that read and write the database.
 
-    A service owns its queries. It does not own an engine and it does not
-    own a connection pool. Every service shares the one engine and the one
-    session factory of the process, which src/database/engine.py holds.
+    A service owns its queries, not an engine and not a connection pool.
+    All services share the engine and session factory of the process, in
+    src/database/engine.py.
     """
 
     def __init__(self, *, session_factory=None):
-        """Store the session factory that this service uses.
-
-        The argument is keyword only. These services took a database URL
-        before, so a caller that still passes one fails here with a clear
-        TypeError, and not later on the first query.
-
-        Args:
-            session_factory: A factory to use instead of the factory of
-                this process. A test passes its own factory to work on
-                another database. Leave it empty in the application.
-        """
+        # Keyword only, so a caller that still passes the old database URL
+        # fails here and not on its first query. A test can pass a factory
+        # for another database.
         self.Session = session_factory or Session
 
     @contextmanager

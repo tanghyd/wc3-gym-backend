@@ -2,13 +2,9 @@ import logging
 import os
 from dotenv import load_dotenv
 
-# Read the .env file and set up logging before the imports below, because
-# src.database.engine builds the engine when it is imported and reads its
-# settings from the environment.
+# Before the imports below: engine.py reads DB_URL when it is imported.
 load_dotenv()
-
-_log_level = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO)
-logging.basicConfig(level=_log_level)
+logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
 
 logger = logging.getLogger(__name__)
 

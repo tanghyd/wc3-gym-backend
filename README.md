@@ -107,9 +107,9 @@ The project uses VS Code tasks for Docker builds and runs. The configuration is 
 
 The whole process shares one engine and one connection pool, which
 `src/database/engine.py` holds. The pool keeps the SQLAlchemy defaults, so
-it allows 5 connections and 10 more during a burst. Each gunicorn worker is
-a separate process with a pool of its own, so the workers multiply that
-number:
+it allows 5 connections and 10 more during a burst. Gunicorn runs one
+worker, and each worker is a process with a pool of its own, so the worker
+count multiplies that number:
 
 ```
 workers x 15 <= MySQL max_connections
@@ -117,19 +117,8 @@ workers x 15 <= MySQL max_connections
 
 MySQL 5.7 accepts 151 connections by default, which leaves room for ten
 workers. Run `SHOW VARIABLES LIKE 'max_connections'` on the server before
-you raise the number of workers.
-
-`gunicorn.conf.py` holds the gunicorn settings. To change one, set
-`GUNICORN_CMD_ARGS`, which gunicorn reads by itself:
-
-```bash
-GUNICORN_CMD_ARGS="--workers=4"
-```
-
-That file loads the application one time in the parent process, so the
-schema check also runs one time. Keep that setting on. With it off, every
-worker checks the schema at the same moment, and on a new database one
-worker creates a table while another fails with "table already exists".
+you raise the worker count, and read the notes at the top of
+`src/database/engine.py` first.
 
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container
