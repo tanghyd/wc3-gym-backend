@@ -5,6 +5,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_caching import Cache
+from src.database.engine import init_schema
 from src.database.user_db_service import UserDBService
 from src.database.team_db_service import TeamDBService
 from src.database.match_db_service import MatchDBService
@@ -149,21 +150,25 @@ jwt = JWTManager(app)
 logger.debug("JWT initialized!")
 
 
-# Initialize services with database URL from environment variables
-db_url = os.getenv('DB_URL')
-user_service = UserDBService(db_url=db_url)
-team_service = TeamDBService(db_url=db_url)
-match_service = MatchDBService(db_url=db_url)
-season_service = SeasonDBService(db_url=db_url)
-series_service = SeriesDBService(db_url=db_url)
-draft_series_service = DraftSeriesDBService(db_url=db_url)
-map_service = MapDBService(db_url=db_url)
-team_season_service = TeamSeasonDBService(db_url=db_url)
-fantasy_bet_service = FantasyBetDBService(db_url=db_url)
-fantasy_team_service = FantasyTeamDBService(db_url=db_url)
-settings_service = SettingsDBService(db_url=db_url)
-koth_service = KothDBService(db_url=db_url)
-stats_db_service = PlayerCareerStatsDBService(db_url=db_url)
+# Create the tables that do not exist yet. This runs one time, and it is
+# the only place that opens a connection during start up.
+init_schema()
+
+# Start the database services. They all share the one engine and the one
+# session factory of this process. See src/database/engine.py.
+user_service = UserDBService()
+team_service = TeamDBService()
+match_service = MatchDBService()
+season_service = SeasonDBService()
+series_service = SeriesDBService()
+draft_series_service = DraftSeriesDBService()
+map_service = MapDBService()
+team_season_service = TeamSeasonDBService()
+fantasy_bet_service = FantasyBetDBService()
+fantasy_team_service = FantasyTeamDBService()
+settings_service = SettingsDBService()
+koth_service = KothDBService()
+stats_db_service = PlayerCareerStatsDBService()
 
 logger.debug("DB Services initialized!")
 

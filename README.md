@@ -103,6 +103,33 @@ The project uses VS Code tasks for Docker builds and runs. The configuration is 
 | `FRONTEND_URL` | Admin frontend URL for CORS configuration | `http://localhost:5003` |
 | `BOT_WEBHOOK_URL` | Discord bot webhook endpoint for series updates | `http://host.docker.internal:3001/webhook/series-updated` |
 
+**Database connection settings (all optional):**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_POOL_SIZE` | Connections that the pool keeps open between requests | `5` |
+| `DB_MAX_OVERFLOW` | Extra connections that the pool may open for a burst | `10` |
+| `DB_POOL_TIMEOUT` | Seconds to wait for a free connection before the request fails | `30` |
+| `DB_POOL_RECYCLE` | Seconds before the pool replaces a connection. Keep it below the MySQL `wait_timeout` | `3600` |
+| `DB_CREATE_ALL` | Create missing tables at start up. Set to `false` when another tool owns the schema | `true` |
+| `DB_ECHO` | Write every SQL statement to the log. Use it for debugging only | `false` |
+| `GUNICORN_WORKERS` | Number of worker processes | `1` |
+| `GUNICORN_PRELOAD` | Load the application one time in the parent process to save memory | `false` |
+
+**How many database connections the application uses:**
+
+The whole process shares one engine and one connection pool, which
+`src/database/engine.py` holds. Each gunicorn worker is a separate process
+with its own pool, so the workers multiply the connections:
+
+```
+GUNICORN_WORKERS x (DB_POOL_SIZE + DB_MAX_OVERFLOW) <= MySQL max_connections
+```
+
+MySQL 5.7 accepts 151 connections by default. With the defaults above, one
+worker uses at most 15 connections. Check `SHOW VARIABLES LIKE 'max_connections'`
+on the server before you raise `GUNICORN_WORKERS`.
+
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container
 - If MySQL is running locally (not in Docker), use `host.docker.internal:3306`

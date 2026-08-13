@@ -1,43 +1,39 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-import logging
 
-from sqlalchemy import create_engine
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
+from src.database.engine import session_scope
 
-from src.database.model.DBModel import Base
-from custom_exceptions import DBException
-
-logger = logging.getLogger(__name__)
 
 class AbstractDatabaseService(ABC):
-    def __init__(self, db_url):
-        # Optimize connection pooling for better performance
-        self.engine = create_engine(
-            db_url,
-            pool_size=10,              # Maintain 10 persistent connections
-            max_overflow=20,           # Allow up to 20 extra connections during peak
-            pool_pre_ping=True,        # Verify connections before using
-            pool_recycle=3600,         # Recycle connections every hour
-            echo=False                  # Disable SQL logging for performance
-        )
-        
-        Base.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine)
+    """Base class for the services that read and write the database.
+
+    A service owns its queries. It does not own an engine and it does not
+    own a connection pool. Every service shares the one engine and the one
+    session factory of the process, which src/database/engine.py holds.
+    """
+
+    def __init__(self, session_factory=None):
+        """Store the session factory that this service uses.
+
+        Args:
+            session_factory: A factory to use instead of the factory of
+                this process. Tests pass their own factory to work on
+                another database. Leave it empty in the application.
+        """
+        self._session_factory = session_factory
 
     @contextmanager
     def get_session(self):
-        """One transaction per call: commit on success, roll back on error,
-        always close. Callers must not commit; to share a transaction, pass
-        the session instead of opening a new one. Database errors become
-        DBException here and nowhere else."""
-        try:
-            with self.Session.begin() as session:
-                yield session
-        except SQLAlchemyError as e:
-            logger.exception("Database error")
-            raise DBException(f"Database error: {e}") from e
+        """One transaction for each call.
+
+        The block commits on success, rolls back on error, and always
+        closes the session. Callers must not commit. To share a
+        transaction, pass the session instead of opening a new one.
+        Database errors become DBException in session_scope and nowhere
+        else.
+        """
+        with session_scope(self._session_factory) as session:
+            yield session
 
     @abstractmethod
     def add(self, **kwargs):

@@ -22,4 +22,7 @@ RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /
 USER appuser
 
 # During debugging, this entry point will be overridden. For more information, please refer to https://aka.ms/vscode-docker-python-debug
-CMD ["gunicorn", "--bind", "0.0.0.0:5002", "--timeout=1250", "app:app"]
+# The settings live in gunicorn.conf.py, which gunicorn reads from /app.
+# That file keeps the bind address and the timeout that this line used
+# before, and it adds the worker settings for the database connections.
+CMD ["gunicorn", "app:app"]
