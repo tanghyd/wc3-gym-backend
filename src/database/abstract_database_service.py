@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 class AbstractDatabaseService(ABC):
     """Base class for the services that read and write the database.
 
-    A service owns its queries, not an engine and not a connection pool.
     All services share the engine and session factory of the process, in
     src/database/engine.py.
     """

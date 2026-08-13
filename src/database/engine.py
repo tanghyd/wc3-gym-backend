@@ -1,12 +1,7 @@
 """One engine and one session factory for the whole process.
 
-SQLAlchemy wants one Engine for each database for the life of the
-application, with the session factory beside it at module level. Both are
-safe to share between threads. A Session is not, so every caller opens its
-own and drops it at the end of the call.
-
-One Engine for each service would split the pool into pools that cannot
-lend connections to each other.
+The engine and the factory are safe to share between threads. A Session is
+not, so every caller opens its own and drops it at the end of the call.
 """
 
 import os
@@ -30,11 +25,14 @@ Session = sessionmaker(bind=engine)
 def init_schema():
     """Create the tables that do not exist yet. Runs one time at start up.
 
-    This holds the application to one worker. create_all asks whether a
-    table exists and then creates it, so two workers that start against an
-    empty database race, and one stops with "table already exists".
+    create_all asks whether a table exists and then creates it, so workers
+    that start against an empty database race, and one stops with "table
+    already exists". Run gunicorn with --preload to use more than one
+    worker: the parent then imports one time, and the dispose below leaves
+    each worker an empty pool, which a forked process needs.
     """
     Base.metadata.create_all(engine)
 
-    # Start up is the only user of this connection, so give it back.
+    # Start up is the only user of this connection. Giving it back also
+    # leaves nothing for a forked worker to inherit.
     engine.dispose()

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 # Before the imports below: engine.py reads DB_URL when it is imported.
 load_dotenv()
-# getattr, not the name alone: a wrong LOG_LEVEL must not stop the application.
+# A wrong LOG_LEVEL must not stop the application.
 logging.basicConfig(level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
 logger = logging.getLogger(__name__)
@@ -149,12 +149,9 @@ jwt = JWTManager(app)
 logger.debug("JWT initialized!")
 
 
-# Create the tables that do not exist yet. This runs one time, and it is
-# the only place that opens a connection during start up.
 init_schema()
 
-# Start the database services. They all share the one engine and the one
-# session factory of this process. See src/database/engine.py.
+# The database services share the engine in src/database/engine.py.
 user_service = UserDBService()
 team_service = TeamDBService()
 match_service = MatchDBService()
