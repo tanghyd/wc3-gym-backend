@@ -103,27 +103,6 @@ The project uses VS Code tasks for Docker builds and runs. The configuration is 
 | `FRONTEND_URL` | Admin frontend URL for CORS configuration | `http://localhost:5003` |
 | `BOT_WEBHOOK_URL` | Discord bot webhook endpoint for series updates | `http://host.docker.internal:3001/webhook/series-updated` |
 
-**How many database connections the application uses:**
-
-The whole process shares one engine and one connection pool, which
-`src/database/engine.py` holds. The pool keeps the SQLAlchemy defaults, so
-it allows 5 connections and 10 more during a burst. Gunicorn runs one
-worker, and each worker is a process with a pool of its own, so the worker
-count multiplies that number:
-
-```
-workers x 15 <= MySQL max_connections
-```
-
-MySQL 5.7 accepts 151 connections by default, which leaves room for ten
-workers. Run `SHOW VARIABLES LIKE 'max_connections'` on the server before
-you raise the worker count.
-
-Raising the worker count against an **empty** database fails: every worker
-creates the tables at the same moment, and one of them stops with "table
-already exists". Start one worker first so that the tables exist, then
-raise the count. `src/database/engine.py` holds the same note.
-
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container
 - If MySQL is running locally (not in Docker), use `host.docker.internal:3306`
