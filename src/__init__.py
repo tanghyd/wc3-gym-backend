@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 
 # Before the imports below: engine.py reads DB_URL when it is imported.
 load_dotenv()
-logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
+# getattr, not the name alone: a wrong LOG_LEVEL must not stop the application.
+logging.basicConfig(level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
 logger = logging.getLogger(__name__)
 

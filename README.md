@@ -117,8 +117,12 @@ workers x 15 <= MySQL max_connections
 
 MySQL 5.7 accepts 151 connections by default, which leaves room for ten
 workers. Run `SHOW VARIABLES LIKE 'max_connections'` on the server before
-you raise the worker count, and read the notes at the top of
-`src/database/engine.py` first.
+you raise the worker count.
+
+Raising the worker count against an **empty** database fails: every worker
+creates the tables at the same moment, and one of them stops with "table
+already exists". Start one worker first so that the tables exist, then
+raise the count. `src/database/engine.py` holds the same note.
 
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container

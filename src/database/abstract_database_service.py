@@ -18,12 +18,6 @@ class AbstractDatabaseService(ABC):
     src/database/engine.py.
     """
 
-    def __init__(self, *, session_factory=None):
-        # Keyword only, so a caller that still passes the old database URL
-        # fails here and not on its first query. A test can pass a factory
-        # for another database.
-        self.Session = session_factory or Session
-
     @contextmanager
     def get_session(self):
         """One transaction per call: commit on success, roll back on error,
@@ -31,7 +25,7 @@ class AbstractDatabaseService(ABC):
         the session instead of opening a new one. Database errors become
         DBException here and nowhere else."""
         try:
-            with self.Session.begin() as session:
+            with Session.begin() as session:
                 yield session
         except SQLAlchemyError as e:
             logger.exception("Database error")
