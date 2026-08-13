@@ -4,6 +4,7 @@ Flask-based REST API for GNL (Gym Newbie League) esports platform providing JWT-
 
 ## Prerequisites
 
+- **uv** - [Install uv](https://docs.astral.sh/uv/getting-started/installation/) - manages the Python version, the virtual environment, and the dependencies
 - **Docker Desktop** - [Install Docker](https://www.docker.com/products/docker-desktop)
 - **Visual Studio Code** - [Download VS Code](https://code.visualstudio.com/)
 - **VS Code Extensions:**
@@ -48,29 +49,21 @@ git clone <repository-url>
 cd backend
 ```
 
-### 2. Create Python Virtual Environment
-
-Open the project in VS Code and create a virtual environment:
+### 2. Install Dependencies
 
 ```bash
-python -m venv .venv
+uv sync
 ```
 
-VS Code will prompt to select this as the workspace interpreter - click "Yes".
+This one command installs a compatible Python, creates `.venv`, and installs the dependencies from `uv.lock`, including the dev group (pytest). No activation needed: run tools with `uv run <command>`.
 
-### 3. Install Dependencies
+VS Code will prompt to select `.venv` as the workspace interpreter - click "Yes".
 
-```bash
-# Activate virtual environment (if not auto-activated)
-.venv\Scripts\Activate.ps1  # Windows PowerShell
-# OR
-source .venv/bin/activate    # Mac/Linux
+Dependencies live in `pyproject.toml`: runtime packages under `[project] dependencies`, development-only packages under `[dependency-groups] dev`. After editing either list, run `uv sync` again and commit the updated `uv.lock`.
 
-# Install packages
-pip install -r requirements.txt
-```
+**Note:** the Docker image still installs from `requirements.txt`. Until the Dockerfile moves to uv, a runtime dependency change goes in both `pyproject.toml` and `requirements.txt`.
 
-### 4. Configure tasks.json
+### 3. Configure tasks.json
 
 The project uses VS Code tasks for Docker builds and runs. The configuration is in `.vscode/tasks.json`.
 
@@ -158,9 +151,9 @@ docker run -d \
 
 ### Import Error: No module named 'xyz'
 
-**Solution:** Reinstall dependencies in virtual environment
+**Solution:** Reinstall the environment
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### Port 5002 Already in Use
@@ -204,8 +197,7 @@ backend/
 ## Tests
 
 ```bash
-pip install pytest        # one time, into the project environment
-python -m pytest
+uv run pytest
 ```
 
 The tests run against a temporary SQLite file and need no database server
