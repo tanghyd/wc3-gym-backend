@@ -30,7 +30,7 @@ dev = ["pytest"]
 # and never builds or installs the project itself.
 package = false
 
-[tool.pytest.ini_options]
+[tool.pytest]
 # Not a default: the pytest console script does not put the repo root on
 # sys.path, and the tests import src. python -m pytest works without this.
 pythonpath = ["."]
