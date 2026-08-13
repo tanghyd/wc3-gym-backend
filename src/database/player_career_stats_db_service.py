@@ -1,7 +1,7 @@
 from src.database.abstract_database_service import AbstractDatabaseService
 from src.database.model.DBPlayerCareerStats import DBPlayerCareerStats
 from src.database.model.DBUser import DBUser
-from src.dtos.player_career_stats_dto import PlayerCareerStatsDTO
+from src.schemas.player_career_stats import PlayerCareerStats
 from custom_exceptions import DBException
 import logging
 
@@ -12,19 +12,19 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
         """Get career stats by stats record ID (implements abstract method)"""
         with self.get_session() as session:
             stat = session.query(DBPlayerCareerStats).filter_by(id=stat_id).first()
-            return PlayerCareerStatsDTO.from_db(stat) if stat else None
+            return PlayerCareerStats.from_db(stat) if stat else None
     
     def add(self, entity):
         """Add new career stats record (implements abstract method)"""
         with self.get_session() as session:
             new_stat = DBPlayerCareerStats.add(session, entity)
-            return PlayerCareerStatsDTO.from_db(new_stat)
+            return PlayerCareerStats.from_db(new_stat)
     
     def update(self, stat_dto):
         """Update career stats record (implements abstract method)"""
         with self.get_session() as session:
             updated_stat = DBPlayerCareerStats.update(session, stat_dto.id, **stat_dto.to_db_dict())
-            return PlayerCareerStatsDTO.from_db(updated_stat)
+            return PlayerCareerStats.from_db(updated_stat)
     
     def delete(self, stat_id: int):
         """Delete career stats by stats ID (implements abstract method)"""
@@ -41,7 +41,7 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
             stats = session.query(DBPlayerCareerStats).order_by(
                 DBPlayerCareerStats.rating.desc()
             ).all()
-            return [PlayerCareerStatsDTO.from_db(stat) for stat in stats]
+            return [PlayerCareerStats.from_db(stat) for stat in stats]
     
     def get_by_user_id(self, user_id: int):
         """Get career stats for a specific user"""
@@ -49,7 +49,7 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
             stat = session.query(DBPlayerCareerStats).filter_by(
                 user_id=user_id
             ).first()
-            return PlayerCareerStatsDTO.from_db(stat) if stat else None
+            return PlayerCareerStats.from_db(stat) if stat else None
     
     def get_by_player_name(self, player_name: str):
         """Get career stats by player name (for unmapped historical records)"""
@@ -57,7 +57,7 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
             stat = session.query(DBPlayerCareerStats).filter_by(
                 player_name=player_name
             ).first()
-            return PlayerCareerStatsDTO.from_db(stat) if stat else None
+            return PlayerCareerStats.from_db(stat) if stat else None
     
     def get_or_create(self, user_id: int):
         """Get existing stats or create new record for user"""
@@ -75,7 +75,7 @@ class PlayerCareerStatsDBService(AbstractDatabaseService):
                 session.add(stats)
                 session.flush()
 
-            return PlayerCareerStatsDTO.from_db(stats)
+            return PlayerCareerStats.from_db(stats)
 
     def update_historical_baseline(self, player_name: str, rating: int,
                                    series_won: int, series_lost: int, games_won: int,
