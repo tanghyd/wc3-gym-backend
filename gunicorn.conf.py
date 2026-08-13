@@ -46,14 +46,20 @@ def post_fork(server, worker):
     """Give each worker process its own database connections.
 
     A database connection is a socket, and two processes must never use
-    the same socket. With preload on, the parent process may already hold
-    connections that the worker inherits. This call drops the inherited
-    connections in the worker and leaves the sockets of the parent open,
-    so the worker opens fresh connections of its own.
+    the same socket. With preload on, the parent process holds the engine
+    and the worker inherits it. This hook drops the inherited connections
+    in the worker and leaves the sockets of the parent open, so the worker
+    opens fresh connections of its own.
 
-    The call does nothing when the worker has no engine yet, so it is
-    safe with preload off as well.
+    This hook must not import the application. With preload off, gunicorn
+    runs this hook before the worker loads the application, so an import
+    here would start the whole application inside the hook, before the
+    worker can handle signals. The lookup in sys.modules therefore finds
+    the engine only when the parent already loaded it, which is the only
+    case that needs the call.
     """
-    from src.database.engine import dispose_engine
+    import sys
 
-    dispose_engine(close=False)
+    engine_module = sys.modules.get("src.database.engine")
+    if engine_module is not None:
+        engine_module.dispose_engine(close=False)

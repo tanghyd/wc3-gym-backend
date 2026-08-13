@@ -12,8 +12,12 @@ class AbstractDatabaseService(ABC):
     session factory of the process, which src/database/engine.py holds.
     """
 
-    def __init__(self, session_factory=None):
+    def __init__(self, *, session_factory=None):
         """Store the session factory that this service uses.
+
+        The argument is keyword only. These services took a database URL
+        before. A caller that still passes one now fails here, with a
+        clear TypeError, instead of much later on the first query.
 
         Args:
             session_factory: A factory to use instead of the factory of

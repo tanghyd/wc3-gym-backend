@@ -72,6 +72,27 @@ def _bool_env(name, default):
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _pool_int_env(name, default, minimum):
+    """Read a pool size, and never return a value under the minimum.
+
+    SQLAlchemy gives 0 and -1 a special meaning: a pool size of 0 and an
+    overflow of -1 both mean "no limit". An operator who sets 0 to mean
+    "keep no connection open" would remove the limit that this module
+    exists to hold, so this function raises such a value to the minimum.
+    """
+    value = _int_env(name, default)
+    if value < minimum:
+        logger.warning(
+            "%s is %d, which SQLAlchemy reads as no limit. The application "
+            "uses %d instead.",
+            name,
+            value,
+            minimum,
+        )
+        return minimum
+    return value
+
+
 def _build_engine():
     """Build the engine from the environment variables."""
     db_url = os.getenv("DB_URL")
@@ -81,8 +102,8 @@ def _build_engine():
             "See the environment variable table in README.md."
         )
 
-    pool_size = _int_env("DB_POOL_SIZE", 5)
-    max_overflow = _int_env("DB_MAX_OVERFLOW", 10)
+    pool_size = _pool_int_env("DB_POOL_SIZE", 5, minimum=1)
+    max_overflow = _pool_int_env("DB_MAX_OVERFLOW", 10, minimum=0)
 
     engine = create_engine(
         db_url,
@@ -177,6 +198,12 @@ def init_schema():
         return
     Base.metadata.create_all(get_engine())
     logger.debug("Database schema checked.")
+
+    # Give the connection back to the database. Start up is the only user
+    # of it, and a gunicorn parent process with preload on would hold it
+    # open and idle for as long as the application runs. The pool opens a
+    # new connection when the first request needs one.
+    get_engine().dispose()
 
 
 def dispose_engine(close=True):

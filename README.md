@@ -130,6 +130,11 @@ MySQL 5.7 accepts 151 connections by default. With the defaults above, one
 worker uses at most 15 connections. Check `SHOW VARIABLES LIKE 'max_connections'`
 on the server before you raise `GUNICORN_WORKERS`.
 
+Each worker checks the schema when it starts. Once the tables exist, that
+check creates nothing. On a server where the tables already exist you can
+set `DB_CREATE_ALL=false`, so the application needs no rights to change
+tables and every worker starts without touching the schema.
+
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container
 - If MySQL is running locally (not in Docker), use `host.docker.internal:3306`
