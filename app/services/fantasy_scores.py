@@ -11,12 +11,25 @@ if TYPE_CHECKING:
     from app.models.fantasy_team import FantasyTeamPublic
     from app.models.season import SeasonPublic
 
-# A player's race arrives as the enum, as its plain value, or not at all,
-# so anything keyed by race carries all three.
+# The response models render a race as its plain value, so a race read
+# off a player or a fantasy team is a string. A race read off an ORM row
+# is the member, and a player without one is None, so a key is any of the
+# three and race_value writes all three the same way.
 type RaceKey = Race | str | None
 type RacePoints = dict[RaceKey, int]
 type RaceStats = dict[RaceKey, dict[str, Any]]
 type RaceWeeklyDetails = dict[RaceKey, list[dict[str, Any]]]
+
+
+def race_value(race: RaceKey) -> str | None:
+    """The plain value, never the repr.
+
+    str(Race.HU) is "Race.HU", which the fantasy page prints as that text
+    and matches against no race icon.
+    """
+    if isinstance(race, Race):
+        return race.value
+    return race
 
 
 class FantasyScoreService:
@@ -463,8 +476,11 @@ class FantasyScoreService:
         drafted_race = fantasy_team.drafted_race
         race_total_points = race_points.get(drafted_race, 0)
 
-        # Convert Race enum keys to strings for JSON serialization
-        race_points_str = {str(race): points for race, points in race_points.items()}
+        # JSON keys are strings, and the page matches them against the
+        # value in race_breakdown.race, so both are written the same way.
+        race_points_str = {
+            race_value(race): points for race, points in race_points.items()
+        }
 
         # Get weekly details for the drafted race (with points_awarded defaulting to 0)
         drafted_race_weekly = race_weekly_details.get(drafted_race, [])
@@ -474,7 +490,7 @@ class FantasyScoreService:
                 detail["rank"] = None
 
         breakdown["race_breakdown"] = {
-            "race": str(drafted_race),
+            "race": race_value(drafted_race),
             "total_points": race_total_points,
             "season_stats": race_stats.get(drafted_race, {"wins": 0, "losses": 0}),
             "weekly_breakdown": drafted_race_weekly,
