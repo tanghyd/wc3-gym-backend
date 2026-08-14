@@ -1,6 +1,8 @@
 from typing import TYPE_CHECKING, Any
 
 from app.models.enums import Race
+from app.models.fantasy_bet import FantasyBetUpdate
+from app.models.fantasy_team import FantasyTeamUpdate
 from app.services.fantasy_bets import FantasyBetService
 from app.services.fantasy_teams import FantasyTeamService
 from app.services.series import SeriesService
@@ -194,6 +196,9 @@ class FantasyScoreService:
             "race_points": 0,
             "bet_points": 0,
             "total_points": 0,
+            # (bet id, points won or lost) per decided bet, so the caller
+            # can store the results without evaluating the bets again.
+            "bet_results": [],
         }
 
         if include_breakdown:
@@ -341,6 +346,7 @@ class FantasyScoreService:
                 won_bet = bet.winner.id == series_winner.id
                 bet_result = bet.bet_points if won_bet else -bet.bet_points
                 result["bet_points"] += bet_result
+                result["bet_results"].append((bet.id, bet_result))
 
                 if include_breakdown:
                     result["bet_breakdown"].append(
@@ -367,46 +373,34 @@ class FantasyScoreService:
         return result
 
     def calculateTeamScores(self, season: "SeasonPublic") -> None:
-        # Calculate race points using shared method
         race_points = self._calculate_race_points(season, include_weekly_details=False)
 
         fteams = self.fantasy_team_service.getAll_fantasy_teams()
         if fteams:
             for fteam in fteams:
-                # Use shared calculation method
                 scores = self._calculate_fantasy_team_scores(
                     fteam, season, race_points, include_breakdown=False
                 )
 
-                # Update bet results in database
-                series_q_string = (
-                    f"user_id=={fteam.captain.id} and season_id=={season.id}"
+                # Store through the Update models. The bet update skips
+                # bet-points validation on purpose: it writes a result,
+                # it does not place a bet.
+                for bet_id, bet_result in scores["bet_results"]:
+                    self.fantasy_bet_service.update(
+                        bet_id, FantasyBetUpdate(bet_result=bet_result)
+                    )
+
+                self.fantasy_team_service.update(
+                    fteam.id,
+                    FantasyTeamUpdate(
+                        player_points=scores["player_points"],
+                        bench_points=scores["bench_points"],
+                        team_points=scores["team_points"],
+                        race_points=scores["race_points"],
+                        bet_points=scores["bet_points"],
+                        total_points=scores["total_points"],
+                    ),
                 )
-                series_query = QueryUtil.parseQuery(series_q_string)
-                player_bets = self.fantasy_bet_service.search_fantasy_bets(series_query)
-                if player_bets:
-                    for bet in player_bets:
-                        series_winner = None
-                        if bet.series.player1_score == 2:
-                            series_winner = bet.series.player1
-                        elif bet.series.player2_score == 2:
-                            series_winner = bet.series.player2
-                        else:
-                            continue
-
-                        won_bet = bet.winner.id == series_winner.id
-                        bet_result = bet.bet_points if won_bet else -bet.bet_points
-                        bet.bet_result = bet_result
-                        self.fantasy_bet_service.update_fantasy_bet(bet.id, bet)
-
-                # Update team with calculated scores
-                fteam.player_points = scores["player_points"]
-                fteam.bench_points = scores["bench_points"]
-                fteam.team_points = scores["team_points"]
-                fteam.race_points = scores["race_points"]
-                fteam.bet_points = scores["bet_points"]
-                fteam.total_points = scores["total_points"]
-                fteam = self.fantasy_team_service.update_fantasy_team(fteam.id, fteam)
 
     def getTeamScoreBreakdown(
         self, fantasy_team_id: int, season: "SeasonPublic"
