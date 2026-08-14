@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -11,34 +12,37 @@ from app.schemas.user_team_season_stats import UserTeamSeasonStats
 from app.schemas.w3c_stats import W3CStats
 from app.services.base import BaseService
 from app.services.w3c import W3CService
-from app.utils.query_util import QueryUtil
+from app.utils.query_util import QueryElement, QueryUtil
+
+if TYPE_CHECKING:
+    from app.services.settings import SettingsService
 
 logger = logging.getLogger(__name__)
 
 
 class UserService(BaseService):
-    def __init__(self, settings_app_service=None):
+    def __init__(self, settings_app_service: "SettingsService | None" = None) -> None:
         self.settings_app_service = settings_app_service
 
-    def add(self, user: User):
+    def add(self, user: User) -> User:
         with self.get_session() as session:
-            user = DBUser.add(session, user.to_db_dict())
-            if not user:
+            db_user = DBUser.add(session, user.to_db_dict())
+            if not db_user:
                 raise DBException("User could not be created!")
-            return User.from_dbuser(user)
+            return User.from_dbuser(db_user)
 
-    def update(self, user: User):
+    def update(self, user: User) -> User:
         with self.get_session() as session:
-            user = DBUser.update(session, user.id, **user.to_db_dict())
-            if not user:
+            db_user = DBUser.update(session, user.id, **user.to_db_dict())
+            if not db_user:
                 raise DBException("User could not be updated")
-            return User.from_dbuser(user)
+            return User.from_dbuser(db_user)
 
-    def delete(self, user_id):
+    def delete(self, user_id: int) -> None:
         with self.get_session() as session:
             DBUser.delete(session, user_id)
 
-    def get(self, user_id):
+    def get(self, user_id: int) -> User | None:
         with self.get_session() as session:
             # Eager load related entities, disable nested loading
             user = (
@@ -57,9 +61,9 @@ class UserService(BaseService):
                 return None
             return User.from_dbuser(user)
 
-    def search(self, query):
+    def search(self, query: QueryElement | None) -> list[User]:
         with self.get_session() as session:
-            result = []
+            result: list[User] = []
             filter = QueryUtil.convertQueryToDBFilter(DBUser, query)
             # Eager load related entities, disable nested loading
             users = (
@@ -84,11 +88,11 @@ class UserService(BaseService):
                 result.append(User.from_dbuser(user))
             return result
 
-    def getAll(self):
+    def getAll(self) -> list[User]:
         with self.get_session() as session:
             from app.models.relationships import DBUserTeamSeason
 
-            result = []
+            result: list[User] = []
             # Eager load related entities, disable nested loading
             users = (
                 session.scalars(
@@ -107,32 +111,32 @@ class UserService(BaseService):
                 result.append(User.from_dbuser(user))
             return result
 
-    def createW3CStats(self, w3c_stats: W3CStats):
+    def createW3CStats(self, w3c_stats: W3CStats) -> W3CStats:
         with self.get_session() as session:
             stats = DBW3CStats.add(session, w3c_stats.to_db_dict())
             if not stats:
                 raise DBException("W3CStats could not be created")
             return W3CStats.from_dbw3cstats(stats)
 
-    def create_user(self, user: User):
+    def create_user(self, user: User) -> User:
         # remove id, db generates the id
         user.id = None
         return self.add(user)
 
-    def update_user(self, user_id, user: User):
+    def update_user(self, user_id: int, user: User) -> User:
         user.id = user_id
         return self.update(user)
 
-    def delete_user(self, user_id: int):
+    def delete_user(self, user_id: int) -> None:
         self.delete(user_id)
 
-    def get_user(self, user_id: int):
+    def get_user(self, user_id: int) -> User:
         user_data = self.get(user_id)
         if not user_data:
             raise NotFoundException(f"User not found by Id: {user_id}")
         return user_data
 
-    def validateBattleTag(self, battle_tag: str):
+    def validateBattleTag(self, battle_tag: str) -> bool:
         """
         Validate that a BattleTag exists on W3Champions without persisting anything.
         Returns True if player exists, False otherwise.
@@ -146,7 +150,7 @@ class UserService(BaseService):
             )
             return False
 
-    def updateW3CStats(self, user: User):
+    def updateW3CStats(self, user: User) -> None:
         w3c_service = W3CService(settings_app_service=self.settings_app_service)
 
         # Resolve the current W3C season so we can also fetch the previous season
@@ -155,7 +159,7 @@ class UserService(BaseService):
             season_setting = self.settings_app_service.get_setting("current_wc3_season")
             current_season = season_setting.get("value") if season_setting else None
 
-        all_stats = []
+        all_stats: list[W3CStats] = []
 
         # Fetch current season stats
         try:
@@ -201,14 +205,14 @@ class UserService(BaseService):
                     s.user_id = user.id
                     self.createW3CStats(s)
 
-    def updateW3CStats_ById(self, user_id):
+    def updateW3CStats_ById(self, user_id: int) -> User:
         user = self.get(user_id)
         if not user:
             raise Exception(f"User could not be found by id: {user_id}")
         self.updateW3CStats(user)
         return self.get_user(user_id)
 
-    def updateUserTeamSeasonStats(self, season_stats):
+    def updateUserTeamSeasonStats(self, season_stats: UserTeamSeasonStats) -> User:
         if not season_stats:
             raise Exception("Seasonstats not defined")
         with self.get_session() as session:

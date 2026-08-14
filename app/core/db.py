@@ -10,7 +10,7 @@ factory below to it.
 
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models.base import Base
@@ -20,7 +20,7 @@ from app.models.base import Base
 Session = sessionmaker()
 
 
-def init_engine(db_url=None):
+def init_engine(db_url: str | None = None) -> Engine:
     """Build the engine and bind the session factory to it.
 
     Reads DB_URL when the caller passes no url. Both engine settings are for
@@ -35,7 +35,7 @@ def init_engine(db_url=None):
     return engine
 
 
-def init_schema(engine):
+def init_schema(engine: Engine) -> None:
     """Create the tables that do not exist yet. Runs one time at start up.
 
     create_all asks whether a table exists and then creates it, so workers
