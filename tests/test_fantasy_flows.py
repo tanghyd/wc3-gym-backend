@@ -63,6 +63,36 @@ def test_calculate_scores_drafted_players(
     assert team["total_points"] == 8 + 15 + 18 + 10
 
 
+def test_bet_update_without_bet_points_keeps_them(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    bet = get_json(client, "/fantasy/bets")[0]
+    other_player = seeded["player_ids"][2]
+    resp = client.put(
+        f"/fantasy/bets/{bet['id']}",
+        json={"winner_id": other_player},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    updated = get_json(client, f"/fantasy/bets/{bet['id']}")
+    assert updated["winner_id"] == other_player
+    assert updated["bet_points"] == 10
+
+
+def test_bet_update_carrying_bet_points_validates_them(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    bet = get_json(client, "/fantasy/bets")[0]
+    for bad_value in (0, ""):
+        resp = client.put(
+            f"/fantasy/bets/{bet['id']}",
+            json={"bet_points": bad_value},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+        assert "bet_points" in resp.json()["error"]
+
+
 def test_calculate_twice_is_stable(
     client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
 ) -> None:
