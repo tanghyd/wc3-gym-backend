@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Optional, Self
 
 from pydantic import field_serializer
 from sqlalchemy.orm import Session
@@ -52,7 +52,9 @@ class FantasyTeam(FantasyTeamBase, DBModel, table=True):
     )
 
     @classmethod
-    def addPlayers(cls, session: Session, obj_id, user_ids):
+    def addPlayers(
+        cls, session: Session, obj_id: int, user_ids: list[int]
+    ) -> Self:
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Team not found by id: {obj_id}")
@@ -74,7 +76,9 @@ class FantasyTeam(FantasyTeamBase, DBModel, table=True):
         return team
 
     @classmethod
-    def removePlayers(cls, session: Session, obj_id, user_ids):
+    def removePlayers(
+        cls, session: Session, obj_id: int, user_ids: list[int]
+    ) -> Self:
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Fantasy Team not found by id: {obj_id}")
@@ -130,11 +134,13 @@ class FantasyTeamPublic(FantasyTeamBase):
     drafted_players: Annotated[list[UserPublic] | None, DropNoneItems] = None
 
     @field_serializer("drafted_players", when_used="json")
-    def _drafted_players_json(self, value):
+    def _drafted_players_json(
+        self, value: list[UserPublic] | None
+    ) -> list[dict[str, Any]] | None:
         return [user.to_dict() for user in value] if value else None
 
     @classmethod
-    def from_fantasy_team(cls, fteam):
+    def from_fantasy_team(cls, fteam: FantasyTeam | None) -> Self | None:
         if not fteam:
             return None
 
@@ -166,5 +172,5 @@ class FantasyTeamPublic(FantasyTeamBase):
             total_points=fteam.total_points,
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

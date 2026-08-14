@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Self
 
 from sqlalchemy import JSON, Column, select
 from sqlalchemy.orm import Session, joinedload
@@ -69,7 +69,9 @@ class DBTeamSeason(DBModel, table=True):
     )
 
     @classmethod
-    def updateSeasonInfo(cls, session: Session, obj_id, team_id, **kwargs):
+    def updateSeasonInfo(
+        cls, session: Session, obj_id: int, team_id: int, **kwargs: object
+    ) -> Self | None:
         # Eager load related entities to prevent N+1 queries
         obj = session.scalars(
             select(cls)

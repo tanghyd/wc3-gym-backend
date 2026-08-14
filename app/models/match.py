@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Optional, Self
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -71,7 +71,7 @@ class MatchPublic(MatchBase):
     fixed_map: MapPublic | None = None
 
     @classmethod
-    def from_match(cls, match):
+    def from_match(cls, match: Match | None) -> Self | None:
         if not match:
             return None
 
@@ -95,5 +95,5 @@ class MatchPublic(MatchBase):
             team2_score=match.team2_score,
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

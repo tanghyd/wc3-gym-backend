@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, Self
 
 from sqlalchemy import DECIMAL
 from sqlmodel import Field, Relationship, SQLModel
@@ -86,7 +86,7 @@ class PlayerCareerStatsPublic(PlayerCareerStatsBase):
     avg_series_per_season: float | None = None
 
     @classmethod
-    def from_career_stats(cls, stats):
+    def from_career_stats(cls, stats: PlayerCareerStats | None) -> Self | None:
         if not stats:
             return None
 
@@ -112,7 +112,7 @@ class PlayerCareerStatsPublic(PlayerCareerStatsBase):
             avg_series_per_season=stats.avg_series_per_season,
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         result = self.model_dump(mode="json")
         for key in _FLOAT_FIELDS:
             result[key] = result[key] if result[key] else 0.0
