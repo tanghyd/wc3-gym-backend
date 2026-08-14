@@ -39,17 +39,17 @@ TABLES = {
 }
 
 
-def import_all_models():
+def import_all_models() -> None:
     for module in pkgutil.iter_modules(app.models.__path__):
         importlib.import_module(f"app.models.{module.name}")
 
 
-def test_every_mapping_resolves():
+def test_every_mapping_resolves() -> None:
     import_all_models()
     configure_mappers()
 
 
-def test_the_metadata_holds_every_table():
+def test_the_metadata_holds_every_table() -> None:
     """A table missing here is a table create_all does not make."""
     import_all_models()
     assert set(SQLModel.metadata.tables) == TABLES
