@@ -132,6 +132,11 @@ class FantasyTeamPublic(FantasyTeamBase):
     # Only the empty list needs handling; pydantic serializes the players
     # itself. Returning them instead of their dicts keeps UserPublic in the
     # published schema, because pydantic builds that from this return type.
+    #
+    # An empty team reads as null rather than []. Every drafted_players site
+    # in admin_frontend accepts either shape, and the offline leaderboard
+    # generator lives outside these repos, so nothing here says which the
+    # published pages need.
     @field_serializer("drafted_players", when_used="json")
     def _drafted_players_json(
         self, value: list[UserPublic] | None
