@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from app.models.relationships import DBUserTeamSeason
 
 
-
 class UserTeamSeasonStatsPublic(SQLModel):
     user_id: int | None = None
     team_id: int | None = None

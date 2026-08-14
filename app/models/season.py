@@ -62,9 +62,7 @@ class Season(SeasonBase, DBModel, table=True):
         return season
 
     @classmethod
-    def removeTeams(
-        cls, session: Session, obj_id: int, team_ids: list[int]
-    ) -> Self:
+    def removeTeams(cls, session: Session, obj_id: int, team_ids: list[int]) -> Self:
         from app.models.team import Team
 
         season = session.get(cls, obj_id)
@@ -107,9 +105,7 @@ class Season(SeasonBase, DBModel, table=True):
         return season
 
     @classmethod
-    def removeMaps(
-        cls, session: Session, obj_id: int, map_ids: list[int]
-    ) -> Self:
+    def removeMaps(cls, session: Session, obj_id: int, map_ids: list[int]) -> Self:
         from app.models.map import Map
 
         season = session.get(cls, obj_id)
@@ -132,9 +128,7 @@ class Season(SeasonBase, DBModel, table=True):
         return season
 
     @classmethod
-    def addUserSignup(
-        cls, session: Session, obj_id: int, user_ids: list[int]
-    ) -> Self:
+    def addUserSignup(cls, session: Session, obj_id: int, user_ids: list[int]) -> Self:
         from app.models.user import User
 
         season = session.get(cls, obj_id)

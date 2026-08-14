@@ -107,9 +107,7 @@ class UserService(BaseService):
                 result.append(UserPublic.from_user(user))
             return result
 
-    def createW3CStats(
-        self, w3c_stats: W3CStatsCreate, user_id: int
-    ) -> W3CStatsPublic:
+    def createW3CStats(self, w3c_stats: W3CStatsCreate, user_id: int) -> W3CStatsPublic:
         with self.get_session() as session:
             stats = W3CStats.add(
                 session, {**w3c_stats.model_dump(), "user_id": user_id}

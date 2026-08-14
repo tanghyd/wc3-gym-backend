@@ -91,9 +91,7 @@ class FantasyTeamService(BaseService):
             fteam = FantasyTeam.addPlayers(session, team_id, player_ids)
             return FantasyTeamPublic.from_fantasy_team(fteam)
 
-    def removePlayers(
-        self, team_id: int, player_ids: list[int]
-    ) -> FantasyTeamPublic:
+    def removePlayers(self, team_id: int, player_ids: list[int]) -> FantasyTeamPublic:
         with self.get_session() as session:
             team = FantasyTeam.removePlayers(session, team_id, player_ids)
             return FantasyTeamPublic.from_fantasy_team(team)
@@ -123,9 +121,7 @@ class FantasyTeamService(BaseService):
     ) -> list[FantasyTeamPublic]:
         return self.search(query)
 
-    def addFantasyPlayers(
-        self, team_id: int, players: list[int]
-    ) -> FantasyTeamPublic:
+    def addFantasyPlayers(self, team_id: int, players: list[int]) -> FantasyTeamPublic:
         return self.addPlayers(team_id, players)
 
     def removeFantasyPlayers(

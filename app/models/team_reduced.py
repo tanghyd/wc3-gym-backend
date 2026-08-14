@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from app.models.team import Team
 
 
-
 class TeamReduced(SQLModel):
     id: int | None = None
     # name and long_name also receive numeric cells from the xlsx import.

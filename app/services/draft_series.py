@@ -102,9 +102,7 @@ class DraftSeriesService(BaseService):
         with self.get_session() as session:
             session.execute(delete(DraftSeries).where(DraftSeries.match_id == match_id))
 
-    def create_draft_series(
-        self, draft_series: DraftSeriesCreate
-    ) -> DraftSeriesPublic:
+    def create_draft_series(self, draft_series: DraftSeriesCreate) -> DraftSeriesPublic:
         """Create a new draft series"""
         return self.add(draft_series)
 

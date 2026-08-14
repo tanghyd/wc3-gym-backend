@@ -103,9 +103,7 @@ class FantasyBetService(BaseService):
                 result.append(FantasyBetPublic.from_fantasy_bet(fbet))
             return result
 
-    def _apply_bet_points_logic(
-        self, bet: FantasyBetCreate | FantasyBetUpdate
-    ) -> None:
+    def _apply_bet_points_logic(self, bet: FantasyBetCreate | FantasyBetUpdate) -> None:
         """Apply bet points based on settings: use fixed points or validate user input."""
         if not self.settings_app_service:
             # If no settings service, require bet_points from input
@@ -211,7 +209,5 @@ class FantasyBetService(BaseService):
     def getAll_fantasy_bets(self) -> list[FantasyBetPublic]:
         return self.getAll()
 
-    def search_fantasy_bets(
-        self, query: QueryElement | None
-    ) -> list[FantasyBetPublic]:
+    def search_fantasy_bets(self, query: QueryElement | None) -> list[FantasyBetPublic]:
         return self.search(query)

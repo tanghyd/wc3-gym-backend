@@ -133,9 +133,7 @@ class SeasonService(BaseService):
             season = Season.addUserSignup(session, season_id, user_ids)
             return SeasonPublic.from_season(season)
 
-    def removeUserSignup(
-        self, season_id: int, user_ids: list[int]
-    ) -> SeasonPublic:
+    def removeUserSignup(self, season_id: int, user_ids: list[int]) -> SeasonPublic:
         with self.get_session() as session:
             season = Season.removeUserSignup(session, season_id, user_ids)
             return SeasonPublic.from_season(season)

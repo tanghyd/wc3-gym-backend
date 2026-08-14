@@ -52,9 +52,7 @@ class FantasyTeam(FantasyTeamBase, DBModel, table=True):
     )
 
     @classmethod
-    def addPlayers(
-        cls, session: Session, obj_id: int, user_ids: list[int]
-    ) -> Self:
+    def addPlayers(cls, session: Session, obj_id: int, user_ids: list[int]) -> Self:
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Team not found by id: {obj_id}")
@@ -76,9 +74,7 @@ class FantasyTeam(FantasyTeamBase, DBModel, table=True):
         return team
 
     @classmethod
-    def removePlayers(
-        cls, session: Session, obj_id: int, user_ids: list[int]
-    ) -> Self:
+    def removePlayers(cls, session: Session, obj_id: int, user_ids: list[int]) -> Self:
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Fantasy Team not found by id: {obj_id}")

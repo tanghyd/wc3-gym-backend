@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from app.models.relationships import DBTeamSeason
 
 
-
 class SeasonInfoBase(SQLModel):
     season_id: int | None = None
     final_score: int | None = None

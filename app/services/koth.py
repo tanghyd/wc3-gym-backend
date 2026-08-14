@@ -51,9 +51,7 @@ class KothService(BaseService):
     def create_event(self, event: KothEventCreate) -> KothEventPublic:
         return self.add_event(event)
 
-    def update_event(
-        self, event_id: int, event: KothEventUpdate
-    ) -> KothEventPublic:
+    def update_event(self, event_id: int, event: KothEventUpdate) -> KothEventPublic:
         with self.get_session() as session:
             db_event = KothEvent.update(
                 session, event_id, **event.model_dump(exclude_unset=True)
@@ -347,9 +345,7 @@ class KothService(BaseService):
             db_match = KothMatch.add(session, match.model_dump())
             return KothMatchPublic.model_validate(db_match)
 
-    def update_match(
-        self, match_id: int, match: KothMatchUpdate
-    ) -> KothMatchPublic:
+    def update_match(self, match_id: int, match: KothMatchUpdate) -> KothMatchPublic:
         with self.get_session() as session:
             db_match = KothMatch.update(
                 session, match_id, **match.model_dump(exclude_unset=True)

@@ -14,9 +14,7 @@ class TeamSeasonService(BaseService):
     def add(self) -> Exception:
         return Exception("Method not available")
 
-    def update(
-        self, team_id: int, season_info: SeasonInfoUpdate
-    ) -> SeasonInfoPublic:
+    def update(self, team_id: int, season_info: SeasonInfoUpdate) -> SeasonInfoPublic:
         with self.get_session() as session:
             team_season = DBTeamSeason.updateSeasonInfo(
                 session,

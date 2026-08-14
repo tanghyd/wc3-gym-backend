@@ -172,9 +172,7 @@ class SeriesService(BaseService):
 
         return series
 
-    def update_series(
-        self, series_id: int, series: SeriesUpdate
-    ) -> SeriesPublic:
+    def update_series(self, series_id: int, series: SeriesUpdate) -> SeriesPublic:
         series = self.score_app_service.calculateSeriesScore(series)
         series = self.update(series_id, series)
         self.updateGNLSeasonStats(series)

@@ -84,9 +84,7 @@ class PlayerCareerStatsService(BaseService):
             ).first()
             return PlayerCareerStatsPublic.from_career_stats(stat) if stat else None
 
-    def get_by_player_name(
-        self, player_name: str
-    ) -> PlayerCareerStatsPublic | None:
+    def get_by_player_name(self, player_name: str) -> PlayerCareerStatsPublic | None:
         """Get career stats by player name (for unmapped historical records)"""
         with self.get_session() as session:
             stat = session.scalars(
@@ -334,9 +332,7 @@ class PlayerCareerStatsService(BaseService):
         """Get all player career stats ordered by rating"""
         return self.get_all()
 
-    def get_career_stats_by_user(
-        self, user_id: int
-    ) -> PlayerCareerStatsPublic | None:
+    def get_career_stats_by_user(self, user_id: int) -> PlayerCareerStatsPublic | None:
         """Get career stats for a specific user"""
         return self.get_by_user_id(user_id)
 
