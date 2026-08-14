@@ -40,7 +40,7 @@ If you have MySQL installed locally:
 2. Create user: `CREATE USER 'gym_user'@'localhost' IDENTIFIED BY 'your_password';`
 3. Grant privileges: `GRANT ALL PRIVILEGES ON GYM_BACKEND.* TO 'gym_user'@'localhost';`
 
-## VS Code Setup
+## Project Setup
 
 ### 1. Clone Repository
 
@@ -143,6 +143,8 @@ Debugging the code *inside* the container is not set up. That needs `debugpy` in
 - **OpenAPI document:** http://localhost:5002/openapi.json
 
 ### Manual Docker Commands
+
+The image name is the only difference from what `just up` runs. `gnl-backend:local` is the tag `up` builds for this machine; `eashibby/gnl_backend:latest` is the published name a deployment pulls. One Dockerfile builds both, so the tag records where an image is meant to run and nothing else.
 
 ```bash
 # Build image
