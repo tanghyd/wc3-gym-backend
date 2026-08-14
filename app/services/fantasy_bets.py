@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -8,53 +9,56 @@ from app.models.fantasy_bet import DBFantasyBet
 from app.models.series import DBSeries
 from app.schemas.fantasy_bet import FantasyBet
 from app.services.base import BaseService
-from app.utils.query_util import QueryUtil
+from app.utils.query_util import QueryElement, QueryUtil
+
+if TYPE_CHECKING:
+    from app.services.settings import SettingsService
 
 logger = logging.getLogger(__name__)
 
 
 class FantasyBetService(BaseService):
-    def __init__(self, settings_app_service=None):
+    def __init__(self, settings_app_service: "SettingsService | None" = None) -> None:
         self.settings_app_service = settings_app_service
 
-    def add(self, fantasy_bet: FantasyBet):
+    def add(self, fantasy_bet: FantasyBet) -> FantasyBet:
         with self.get_session() as session:
             fbet = DBFantasyBet.add(session, fantasy_bet.to_db_dict())
             if not fbet:
                 raise DBException("FantasyBet could not be created!")
             return FantasyBet.from_dbfantasybet(fbet)
 
-    def update(self, fantasy_bet: FantasyBet):
+    def update(self, fantasy_bet: FantasyBet) -> FantasyBet:
         with self.get_session() as session:
-            fantasy_bet = DBFantasyBet.update(
+            db_fantasy_bet = DBFantasyBet.update(
                 session, fantasy_bet.id, **fantasy_bet.to_db_dict()
             )
-            if not fantasy_bet:
+            if not db_fantasy_bet:
                 raise DBException("Fantasy Bet could not be updated!")
-            return FantasyBet.from_dbfantasybet(fantasy_bet)
+            return FantasyBet.from_dbfantasybet(db_fantasy_bet)
 
-    def delete(self, fantasy_bet_id):
+    def delete(self, fantasy_bet_id: int) -> None:
         with self.get_session() as session:
             DBFantasyBet.delete(session, fantasy_bet_id)
 
-    def get(self, fantasy_bet_id):
+    def get(self, fantasy_bet_id: int) -> FantasyBet:
         with self.get_session() as session:
             fbet = session.get(DBFantasyBet, fantasy_bet_id)
             if not fbet:
                 raise DBException("Fantasy Bet could not be found")
             return FantasyBet.from_dbfantasybet(fbet)
 
-    def getAll(self):
+    def getAll(self) -> list[FantasyBet]:
         with self.get_session() as session:
-            result = []
+            result: list[FantasyBet] = []
             fbet = DBFantasyBet.getAll(session)
             for single_fbet in fbet:
                 result.append(FantasyBet.from_dbfantasybet(single_fbet))
             return result
 
-    def search(self, query):
+    def search(self, query: QueryElement | None) -> list[FantasyBet]:
         with self.get_session() as session:
-            result = []
+            result: list[FantasyBet] = []
             filter = QueryUtil.convertQueryToDBFilter(DBFantasyBet, query)
             if filter is None:
                 logger.debug(f"No fantasy bets found by searchcriteria: {query}")
@@ -93,7 +97,7 @@ class FantasyBetService(BaseService):
                 result.append(FantasyBet.from_dbfantasybet(fbet))
             return result
 
-    def _apply_bet_points_logic(self, bet: FantasyBet):
+    def _apply_bet_points_logic(self, bet: FantasyBet) -> None:
         """Apply bet points based on settings: use fixed points or validate user input."""
         if not self.settings_app_service:
             # If no settings service, require bet_points from input
@@ -177,27 +181,27 @@ class FantasyBetService(BaseService):
             if bet.bet_points is None or bet.bet_points <= 0:
                 raise ValueError("bet_points is required and must be greater than 0")
 
-    def create_fantasy_bet(self, bet: FantasyBet):
+    def create_fantasy_bet(self, bet: FantasyBet) -> FantasyBet:
         self._apply_bet_points_logic(bet)
         bet.id = None
         return self.add(bet)
 
-    def update_fantasy_bet(self, bet_id: int, bet: FantasyBet):
+    def update_fantasy_bet(self, bet_id: int, bet: FantasyBet) -> FantasyBet:
         self._apply_bet_points_logic(bet)
         bet.id = bet_id
         return self.update(bet)
 
-    def delete_fantasy_bet(self, bet_id: int):
+    def delete_fantasy_bet(self, bet_id: int) -> None:
         self.delete(bet_id)
 
-    def get_fantasy_bet(self, bet_id: int):
+    def get_fantasy_bet(self, bet_id: int) -> FantasyBet:
         bet_data = self.get(bet_id)
         if not bet_data:
             raise NotFoundException(f"Fantasy Bet not found by Id: {bet_id}")
         return bet_data
 
-    def getAll_fantasy_bets(self):
+    def getAll_fantasy_bets(self) -> list[FantasyBet]:
         return self.getAll()
 
-    def search_fantasy_bets(self, query):
+    def search_fantasy_bets(self, query: QueryElement | None) -> list[FantasyBet]:
         return self.search(query)

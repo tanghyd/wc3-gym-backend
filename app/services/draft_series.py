@@ -16,27 +16,27 @@ logger = logging.getLogger(__name__)
 
 
 class DraftSeriesService(BaseService):
-    def add(self, draft_series: DraftSeries):
+    def add(self, draft_series: DraftSeries) -> DraftSeries:
         with self.get_session() as session:
-            draft_series = DBDraftSeries.add(session, draft_series.to_db_dict())
-            if not draft_series:
+            db_draft_series = DBDraftSeries.add(session, draft_series.to_db_dict())
+            if not db_draft_series:
                 raise DBException("Draft series could not be created!")
-            return DraftSeries.from_db_draft_series(draft_series)
+            return DraftSeries.from_db_draft_series(db_draft_series)
 
-    def update(self, draft_series: DraftSeries):
+    def update(self, draft_series: DraftSeries) -> DraftSeries:
         with self.get_session() as session:
-            draft_series = DBDraftSeries.update(
+            db_draft_series = DBDraftSeries.update(
                 session, draft_series.id, **draft_series.to_db_dict()
             )
-            if not draft_series:
+            if not db_draft_series:
                 raise DBException("Draft series could not be updated!")
-            return DraftSeries.from_db_draft_series(draft_series)
+            return DraftSeries.from_db_draft_series(db_draft_series)
 
-    def delete(self, draft_series_id):
+    def delete(self, draft_series_id: int) -> None:
         with self.get_session() as session:
             DBDraftSeries.delete(session, draft_series_id)
 
-    def get(self, draft_series_id):
+    def get(self, draft_series_id: int) -> DraftSeries:
         with self.get_session() as session:
             # Eager load relationships to avoid N+1 queries
             draft_series = (
@@ -63,9 +63,9 @@ class DraftSeriesService(BaseService):
                 raise DBException("Draft series could not be found")
             return DraftSeries.from_db_draft_series(draft_series)
 
-    def getByMatchId(self, match_id):
+    def getByMatchId(self, match_id: int) -> list[DraftSeries]:
         with self.get_session() as session:
-            result = []
+            result: list[DraftSeries] = []
             # Eager load relationships
             draft_series_list = (
                 session.scalars(
@@ -91,43 +91,45 @@ class DraftSeriesService(BaseService):
                 result.append(DraftSeries.from_db_draft_series(single_draft_series))
             return result
 
-    def deleteByMatchId(self, match_id):
+    def deleteByMatchId(self, match_id: int) -> None:
         """Delete all draft series for a given match"""
         with self.get_session() as session:
             session.execute(
                 delete(DBDraftSeries).where(DBDraftSeries.match_id == match_id)
             )
 
-    def create_draft_series(self, draft_series: DraftSeries):
+    def create_draft_series(self, draft_series: DraftSeries) -> DraftSeries:
         """Create a new draft series"""
         draft_series.id = None
         return self.add(draft_series)
 
-    def update_draft_series(self, draft_series_id: int, draft_series: DraftSeries):
+    def update_draft_series(
+        self, draft_series_id: int, draft_series: DraftSeries
+    ) -> DraftSeries:
         """Update an existing draft series"""
         draft_series.id = draft_series_id
         return self.update(draft_series)
 
-    def delete_draft_series(self, draft_series_id: int):
+    def delete_draft_series(self, draft_series_id: int) -> None:
         """Delete a draft series"""
         self.delete(draft_series_id)
 
-    def get_draft_series(self, draft_series_id: int):
+    def get_draft_series(self, draft_series_id: int) -> DraftSeries:
         """Get a draft series by ID"""
         draft_series_data = self.get(draft_series_id)
         if not draft_series_data:
             raise NotFoundException(f"Draft series not found by ID: {draft_series_id}")
         return draft_series_data
 
-    def get_draft_series_by_match(self, match_id: int):
+    def get_draft_series_by_match(self, match_id: int) -> list[DraftSeries]:
         """Get all draft series for a match"""
         return self.getByMatchId(match_id)
 
-    def delete_all_drafts_for_match(self, match_id: int):
+    def delete_all_drafts_for_match(self, match_id: int) -> None:
         """Delete all draft series for a match"""
         self.deleteByMatchId(match_id)
 
-    def convert_to_series(self, draft_series: DraftSeries):
+    def convert_to_series(self, draft_series: DraftSeries) -> Series:
         """Convert a draft series to a real series (DTO only, actual creation handled by SeriesService)"""
         # Create a Series from the draft data
         series_dto = Series(
