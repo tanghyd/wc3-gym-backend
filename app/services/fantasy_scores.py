@@ -21,6 +21,12 @@ type RaceStats = dict[RaceKey, dict[str, Any]]
 type RaceWeeklyDetails = dict[RaceKey, list[dict[str, Any]]]
 
 
+def _race_value(race: RaceKey) -> str:
+    """The plain value ("HU"), which is also the frontend's icon id.
+    str(member) would answer the repr ("Race.HU")."""
+    return race.value if isinstance(race, Race) else str(race)
+
+
 class FantasyScoreService:
     def __init__(
         self,
@@ -457,8 +463,9 @@ class FantasyScoreService:
         drafted_race = fantasy_team.drafted_race
         race_total_points = race_points.get(drafted_race, 0)
 
-        # Convert Race enum keys to strings for JSON serialization
-        race_points_str = {str(race): points for race, points in race_points.items()}
+        race_points_str = {
+            _race_value(race): points for race, points in race_points.items()
+        }
 
         # Get weekly details for the drafted race (with points_awarded defaulting to 0)
         drafted_race_weekly = race_weekly_details.get(drafted_race, [])
@@ -468,7 +475,7 @@ class FantasyScoreService:
                 detail["rank"] = None
 
         breakdown["race_breakdown"] = {
-            "race": str(drafted_race),
+            "race": _race_value(drafted_race),
             "total_points": race_total_points,
             "season_stats": race_stats.get(drafted_race, {"wins": 0, "losses": 0}),
             "weekly_breakdown": drafted_race_weekly,

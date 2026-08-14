@@ -63,6 +63,22 @@ def test_calculate_scores_drafted_players(
     assert team["total_points"] == 8 + 15 + 18 + 10
 
 
+def test_breakdown_answers_the_race_value(
+    client: Client, seeded: dict[str, Any]
+) -> None:
+    """The public page keys its race icons by the plain value ("HU"),
+    so the breakdown must never answer the enum repr ("Race.HU")."""
+    body = get_json(
+        client,
+        f"/fantasy/teams/{seeded['fantasy_team_id']}"
+        f"/season/{seeded['season_id']}/breakdown",
+    )
+    race_breakdown = body["race_breakdown"]
+    assert race_breakdown["race"] == "HU"
+    assert race_breakdown["total_points"] == 18
+    assert race_breakdown["all_race_points"] == {"HU": 18}
+
+
 def test_bet_update_without_bet_points_keeps_them(
     client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
 ) -> None:
