@@ -14,6 +14,8 @@ fixture empties it between tests.
 import os
 
 import pytest
+from fastapi import FastAPI
+from httpx2 import Client
 
 # create_app reads these. Set before the app import so the values are the
 # same with and without a .env file (load_dotenv does not override).
@@ -28,7 +30,7 @@ from app.main import create_app
 
 
 @pytest.fixture(scope="session")
-def app(tmp_path_factory):
+def app(tmp_path_factory: pytest.TempPathFactory) -> None:
     # A file, not :memory:. init_schema disposes the pool, and disposing
     # the only connection of an in-memory SQLite database deletes the
     # tables with it.
@@ -37,7 +39,7 @@ def app(tmp_path_factory):
 
 
 @pytest.fixture
-def client(app):
+def client(app: FastAPI) -> None:
     from fastapi.testclient import TestClient
 
     # follow_redirects off, like the Flask test client, so a 302 is
@@ -47,7 +49,7 @@ def client(app):
 
 
 @pytest.fixture(autouse=True)
-def clean_db(app):
+def clean_db(app: FastAPI) -> None:
     """Empty every table after each test. Children first, so no foreign
     key constraint fires."""
     yield
@@ -61,7 +63,7 @@ def clean_db(app):
 
 
 @pytest.fixture
-def seeded(app):
+def seeded(app: FastAPI) -> None:
     """A small consistent league. Returns the ids the tests refer to."""
     from app.core.db import Session
     from tests.seed import seed_league
@@ -73,7 +75,7 @@ def seeded(app):
 
 
 @pytest.fixture
-def auth_headers(client):
+def auth_headers(client: Client) -> None:
     resp = client.post("/login", json={"token": "test-admin-token"})
     assert resp.status_code == 200
     token = resp.json()["access_token"]
@@ -81,7 +83,7 @@ def auth_headers(client):
 
 
 @pytest.fixture
-def refresh_headers(client):
+def refresh_headers(client: Client) -> None:
     resp = client.post("/login", json={"token": "test-admin-token"})
     assert resp.status_code == 200
     token = resp.json()["refresh_token"]

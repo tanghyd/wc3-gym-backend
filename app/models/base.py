@@ -24,7 +24,9 @@ class DBModel(Base):
         return obj
 
     @classmethod
-    def update(cls, session: Session, obj_id: int | None, **kwargs: object) -> Self | None:
+    def update(
+        cls, session: Session, obj_id: int | None, **kwargs: object
+    ) -> Self | None:
         obj = cls.getById(session, obj_id)
         if obj:
             for key, value in kwargs.items():

@@ -13,14 +13,18 @@ router = APIRouter(tags=["users"])
 
 
 @router.post("/users", status_code=201, dependencies=[Depends(require_admin)])
-def add_user(data: Annotated[dict[str, Any], Body()], service: UserServiceDep) -> dict[str, Any] | None:
+def add_user(
+    data: Annotated[dict[str, Any], Body()], service: UserServiceDep
+) -> dict[str, Any] | None:
     """Create a new user with the provided details."""
     user = service.create_user(User(data))
     return user.to_dict() if user else None
 
 
 @router.put("/users/{user_id}", dependencies=[Depends(require_admin)])
-def update_user(user_id: int, data: Annotated[dict[str, Any], Body()], service: UserServiceDep) -> dict[str, Any] | None:
+def update_user(
+    user_id: int, data: Annotated[dict[str, Any], Body()], service: UserServiceDep
+) -> dict[str, Any] | None:
     """Update the details of an existing user."""
     user = service.update_user(user_id, User(data))
     return user.to_dict() if user else None

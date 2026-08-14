@@ -15,14 +15,18 @@ router = APIRouter(tags=["teams"])
 
 
 @router.post("/teams", status_code=201, dependencies=[Depends(require_admin)])
-def add_team(data: Annotated[dict[str, Any], Body()], service: TeamServiceDep) -> dict[str, Any] | None:
+def add_team(
+    data: Annotated[dict[str, Any], Body()], service: TeamServiceDep
+) -> dict[str, Any] | None:
     """Create a new team with the provided name."""
     team = service.create_team(Team(data))
     return team.to_dict() if team else None
 
 
 @router.put("/teams/{team_id}", dependencies=[Depends(require_admin)])
-def update_team(team_id: int, data: Annotated[dict[str, Any], Body()], service: TeamServiceDep) -> dict[str, Any] | None:
+def update_team(
+    team_id: int, data: Annotated[dict[str, Any], Body()], service: TeamServiceDep
+) -> dict[str, Any] | None:
     """Update the name of an existing team."""
     team = service.update_team(team_id, Team(data))
     return team.to_dict() if team else None
@@ -50,20 +54,26 @@ def get_team(team_id: int, service: TeamServiceDep) -> dict[str, Any] | None:
 
 
 @router.get("/teams/{team_id}/seasons/{season_id}")
-def get_team_season(team_id: int, season_id: int, service: TeamServiceDep) -> dict[str, Any] | None:
+def get_team_season(
+    team_id: int, season_id: int, service: TeamServiceDep
+) -> dict[str, Any] | None:
     """Retrieve a team by its ID with all information related to a specific season"""
     team = service.get_team_season(team_id, season_id)
     return team.to_dict() if team else None
 
 
 @router.get("/teams/season/{season_id}")
-def get_all_teams_season(season_id: int, service: TeamServiceDep) -> list[dict[str, Any]]:
+def get_all_teams_season(
+    season_id: int, service: TeamServiceDep
+) -> list[dict[str, Any]]:
     """Retrieve all teams with all information related to a specific season"""
     return [team.to_dict() for team in service.get_teams_season(season_id) or []]
 
 
 @router.get("/teams/season/{season_id}/basic")
-def get_all_teams_season_basic(season_id: int, service: TeamServiceDep) -> list[dict[str, Any]]:
+def get_all_teams_season_basic(
+    season_id: int, service: TeamServiceDep
+) -> list[dict[str, Any]]:
     """Retrieve all teams with season info but without user data for a specific season"""
     return [team.to_dict() for team in service.get_teams_season_basic(season_id) or []]
 
@@ -139,7 +149,9 @@ def search_teams(service: TeamServiceDep, query: str = "") -> list[dict[str, Any
 
 
 @router.post("/teams/w3c_sync/{team_id}/seasons/{season_id}", response_model=None)
-def sync_w3c_users_season(team_id: int, season_id: int, service: TeamServiceDep) -> Response | dict[str, Any] | None:
+def sync_w3c_users_season(
+    team_id: int, season_id: int, service: TeamServiceDep
+) -> Response | dict[str, Any] | None:
     """Sync w3c information for each user of the team"""
     cache_key = f"w3c_sync:{team_id}:{season_id}"
 

@@ -29,7 +29,9 @@ def get_setting(key: str, service: SettingsServiceDep) -> JSONResponse:
 
 
 @router.put("/config/settings", dependencies=[Depends(require_admin)])
-def update_settings(data: Annotated[dict[str, Any], Body()], service: SettingsServiceDep) -> JSONResponse:
+def update_settings(
+    data: Annotated[dict[str, Any], Body()], service: SettingsServiceDep
+) -> JSONResponse:
     """Update one or more configuration settings."""
     settings = data.get("settings", {})
 

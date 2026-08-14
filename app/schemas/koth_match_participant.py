@@ -7,7 +7,6 @@ if TYPE_CHECKING:
     from app.models.koth_match_participant import DBKothMatchParticipant
 
 
-
 class KothMatchParticipant(APISchema):
     id: int | None = None
     match_id: int | None = None
@@ -19,7 +18,9 @@ class KothMatchParticipant(APISchema):
         return self.model_dump(include={"id", "match_id", "signup_id", "team_number"})
 
     @classmethod
-    def from_db_participant(cls, participant: "DBKothMatchParticipant | None") -> Self | None:
+    def from_db_participant(
+        cls, participant: "DBKothMatchParticipant | None"
+    ) -> Self | None:
         if not participant:
             return None
 

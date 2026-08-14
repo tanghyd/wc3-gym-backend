@@ -6,7 +6,6 @@ if TYPE_CHECKING:
     from app.models.settings import DBSettings
 
 
-
 class Settings(APISchema):
     id: int | None = None
     key: str | None = None

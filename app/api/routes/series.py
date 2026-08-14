@@ -13,7 +13,9 @@ router = APIRouter(tags=["series"])
 
 
 @router.post("/series", status_code=201, dependencies=[Depends(require_admin)])
-def add_series(data: Annotated[dict[str, Any], Body()], service: SeriesServiceDep) -> dict[str, Any] | None:
+def add_series(
+    data: Annotated[dict[str, Any], Body()], service: SeriesServiceDep
+) -> dict[str, Any] | None:
     """Create a new series with the provided data"""
     series = service.create_series(Series(data))
     return series.to_dict() if series else None
@@ -68,7 +70,9 @@ def search_series_by_season_and_playday(
 
 
 @router.get("/series/season/{season_id}")
-def get_series_by_season(season_id: int, service: SeriesServiceDep) -> list[dict[str, Any]]:
+def get_series_by_season(
+    season_id: int, service: SeriesServiceDep
+) -> list[dict[str, Any]]:
     """Return all series for a specific season"""
     return [
         series.to_dict() for series in service.searchForSeason(season_id, None) or []
@@ -76,7 +80,9 @@ def get_series_by_season(season_id: int, service: SeriesServiceDep) -> list[dict
 
 
 @router.post("/series/season/{season_id}/search")
-def search_series_by_season(season_id: int, service: SeriesServiceDep, query: str = "") -> list[dict[str, Any]]:
+def search_series_by_season(
+    season_id: int, service: SeriesServiceDep, query: str = ""
+) -> list[dict[str, Any]]:
     """Return series matching the search query for a specific season"""
     parsed_query = QueryUtil.parseQuery(query)
     return [

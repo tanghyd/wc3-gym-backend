@@ -482,7 +482,9 @@ class KothService(BaseService):
         return updated_match
 
     # ============ Match Participant Methods ============
-    def add_participant(self, participant: KothMatchParticipant) -> KothMatchParticipant:
+    def add_participant(
+        self, participant: KothMatchParticipant
+    ) -> KothMatchParticipant:
         with self.get_session() as session:
             db_participant = DBKothMatchParticipant.add(
                 session, participant.to_db_dict()

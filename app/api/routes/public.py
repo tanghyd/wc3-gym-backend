@@ -630,7 +630,9 @@ def _update_player_series(
 
 
 @router.get("/user-info", response_model=None)
-def get_user_info(user_service: UserServiceDep, token: str | None = None) -> JSONResponse | dict[str, Any]:
+def get_user_info(
+    user_service: UserServiceDep, token: str | None = None
+) -> JSONResponse | dict[str, Any]:
     """Get user information by token (for fantasy team captains who may not be players)."""
     if not token:
         return JSONResponse({"error": "missing token"}, status_code=400)

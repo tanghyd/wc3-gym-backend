@@ -13,7 +13,9 @@ router = APIRouter(tags=["seasons"])
 
 
 @router.post("/seasons", status_code=201, dependencies=[Depends(require_admin)])
-def add_season(data: Annotated[dict[str, Any], Body()], service: SeasonServiceDep) -> dict[str, Any] | None:
+def add_season(
+    data: Annotated[dict[str, Any], Body()], service: SeasonServiceDep
+) -> dict[str, Any] | None:
     """Create a new season with the provided name."""
     season = service.create_season(Season(data))
     return season.to_dict() if season else None
@@ -44,7 +46,9 @@ def get_season(season_id: int, service: SeasonServiceDep) -> dict[str, Any] | No
 
 
 @router.post("/seasons/addTeams/{season_id}", dependencies=[Depends(require_admin)])
-def add_teams(season_id: int, data: Annotated[dict[str, Any], Body()], service: SeasonServiceDep) -> dict[str, Any] | None:
+def add_teams(
+    season_id: int, data: Annotated[dict[str, Any], Body()], service: SeasonServiceDep
+) -> dict[str, Any] | None:
     """Add teams to season by providing a list of team ids."""
     season = service.addTeams(season_id, data.get("team_ids"))
     return season.to_dict() if season else None
@@ -75,7 +79,9 @@ def search_seasons(service: SeasonServiceDep, query: str = "") -> list[dict[str,
 
 
 @router.post("/seasons/addMaps/{season_id}", dependencies=[Depends(require_admin)])
-def add_maps(season_id: int, data: Annotated[dict[str, Any], Body()], service: SeasonServiceDep) -> dict[str, Any] | None:
+def add_maps(
+    season_id: int, data: Annotated[dict[str, Any], Body()], service: SeasonServiceDep
+) -> dict[str, Any] | None:
     """Add maps to season by providing a list of map ids."""
     season = service.addMaps(season_id, data.get("map_ids"))
     return season.to_dict() if season else None
@@ -113,6 +119,8 @@ def remove_user_signup(
 
 
 @router.get("/seasons/{season_id}/signups")
-def get_season_signups(season_id: int, service: SeasonServiceDep) -> list[dict[str, Any]]:
+def get_season_signups(
+    season_id: int, service: SeasonServiceDep
+) -> list[dict[str, Any]]:
     """Retrieve all users signed up for a specific season."""
     return [user.to_dict() for user in service.getSignedUpUsers(season_id) or []]

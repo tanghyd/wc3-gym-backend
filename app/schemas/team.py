@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     from app.models.team import DBTeam
 
 
-
 def _season_lists(value: Any) -> Any:  # noqa: ANN401  # a validator sees raw input
     """Per-season lists: drop empty seasons and None entries (old to_dict behavior)."""
     if not value:
@@ -35,7 +34,7 @@ class TeamReduced(APISchema):
     discord_role: Annotated[str | None, NumToStr] = None
 
     @classmethod
-    def from_dbteam(cls, team: "DBTeam | None") -> Self | None:
+    def from_dbteam(cls, team: "DBTeam") -> Self:
         return cls(
             id=team.id,
             name=team.name,

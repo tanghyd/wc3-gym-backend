@@ -6,7 +6,6 @@ if TYPE_CHECKING:
     from app.models.koth_signup import DBKothSignup
 
 
-
 class KothSignup(APISchema):
     id: int | None = None
     event_id: int | None = None

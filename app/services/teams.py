@@ -38,9 +38,7 @@ class TeamService(BaseService):
                 raise DBException("Team icon could not be updated!")
             return Team.from_dbteam(team)
 
-    def addPlayers(
-        self, team_id: int, season_id: int, player_ids: list[int]
-    ) -> Team:
+    def addPlayers(self, team_id: int, season_id: int, player_ids: list[int]) -> Team:
         with self.get_session() as session:
             team = DBTeam.addPlayers(session, team_id, season_id, player_ids)
             if not team:
@@ -56,9 +54,7 @@ class TeamService(BaseService):
                 raise DBException("Team could not be updated!")
             return Team.from_dbteam(team)
 
-    def setCoaches(
-        self, team_id: int, season_id: int, coach_ids: list[int]
-    ) -> Team:
+    def setCoaches(self, team_id: int, season_id: int, coach_ids: list[int]) -> Team:
         with self.get_session() as session:
             team = DBTeam.setCoaches(session, team_id, season_id, coach_ids)
             if not team:

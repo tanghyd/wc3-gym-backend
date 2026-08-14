@@ -13,7 +13,9 @@ router = APIRouter(tags=["matches"])
 
 
 @router.post("/matches", status_code=201, dependencies=[Depends(require_admin)])
-def add_match(data: Annotated[dict[str, Any], Body()], service: MatchServiceDep) -> dict[str, Any] | None:
+def add_match(
+    data: Annotated[dict[str, Any], Body()], service: MatchServiceDep
+) -> dict[str, Any] | None:
     """Creates a new match between two teams with the given teams and score."""
     match = service.create_match(Match(data))
     return match.to_dict() if match else None

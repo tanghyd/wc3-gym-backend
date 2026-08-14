@@ -12,7 +12,9 @@ router = APIRouter(tags=["draft-series"])
 
 
 @router.post("/draft-series", status_code=201, dependencies=[Depends(require_admin)])
-def add_draft_series(data: Annotated[dict[str, Any], Body()], service: DraftSeriesServiceDep) -> dict[str, Any] | None:
+def add_draft_series(
+    data: Annotated[dict[str, Any], Body()], service: DraftSeriesServiceDep
+) -> dict[str, Any] | None:
     """Create a new draft series (visible in admin UI only)"""
     draft_series = service.create_draft_series(DraftSeries(data))
     return draft_series.to_dict() if draft_series else None
@@ -40,14 +42,18 @@ def delete_draft_series(draft_series_id: int, service: DraftSeriesServiceDep) ->
 
 
 @router.get("/draft-series/{draft_series_id}")
-def get_draft_series(draft_series_id: int, service: DraftSeriesServiceDep) -> dict[str, Any] | None:
+def get_draft_series(
+    draft_series_id: int, service: DraftSeriesServiceDep
+) -> dict[str, Any] | None:
     """Retrieve a draft series by its ID."""
     draft_series = service.get_draft_series(draft_series_id)
     return draft_series.to_dict() if draft_series else None
 
 
 @router.get("/draft-series/match/{match_id}")
-def get_draft_series_by_match(match_id: int, service: DraftSeriesServiceDep) -> list[dict[str, Any]]:
+def get_draft_series_by_match(
+    match_id: int, service: DraftSeriesServiceDep
+) -> list[dict[str, Any]]:
     """Return all draft series for a specific match"""
     return [
         draft_series.to_dict()
@@ -60,7 +66,9 @@ def get_draft_series_by_match(match_id: int, service: DraftSeriesServiceDep) -> 
     status_code=204,
     dependencies=[Depends(require_admin)],
 )
-def delete_all_draft_series_for_match(match_id: int, service: DraftSeriesServiceDep) -> None:
+def delete_all_draft_series_for_match(
+    match_id: int, service: DraftSeriesServiceDep
+) -> None:
     """Delete all draft series for a specific match"""
     service.delete_all_drafts_for_match(match_id)
 

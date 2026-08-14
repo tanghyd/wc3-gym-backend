@@ -7,7 +7,6 @@ if TYPE_CHECKING:
     from app.models.koth_match import DBKothMatch
 
 
-
 class KothMatch(APISchema):
     id: int | None = None
     event_id: int | None = None

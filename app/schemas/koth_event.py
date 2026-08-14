@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from app.models.koth_event import DBKothEvent
 
 
-
 class KothEvent(APISchema):
     id: int | None = None
     name: str | None = None
