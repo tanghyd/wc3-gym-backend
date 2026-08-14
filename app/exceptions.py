@@ -1,16 +1,20 @@
 class DBException(Exception):
-    def __init__(self, message: str) -> None:
+    """The database itself failed. The API answers 500."""
+
+    def __init__(self, message):
         super().__init__(message)
         self.message = message
 
-    def __str__(self) -> str:
-        return f"DBException: {self.message}"
+    def __str__(self):
+        return self.message
 
 
 class NotFoundException(Exception):
-    def __init__(self, message: str) -> None:
+    """The row the request names does not exist. The API answers 404."""
+
+    def __init__(self, message):
         super().__init__(message)
         self.message = message
 
-    def __str__(self) -> str:
-        return f"NotFoundException: {self.message}"
+    def __str__(self):
+        return self.message

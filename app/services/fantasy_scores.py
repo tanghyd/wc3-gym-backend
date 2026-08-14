@@ -1,22 +1,8 @@
-from typing import TYPE_CHECKING, Any
-
-from app.models.enums import Race
 from app.services.fantasy_bets import FantasyBetService
 from app.services.fantasy_teams import FantasyTeamService
 from app.services.series import SeriesService
 from app.services.teams import TeamService
 from app.utils.query_util import QueryUtil
-
-if TYPE_CHECKING:
-    from app.schemas.fantasy_team import FantasyTeam
-    from app.schemas.season import Season
-
-# A player's race arrives as the enum, as its plain value, or not at all,
-# so anything keyed by race carries all three.
-type RaceKey = Race | str | None
-type RacePoints = dict[RaceKey, int]
-type RaceStats = dict[RaceKey, dict[str, Any]]
-type RaceWeeklyDetails = dict[RaceKey, list[dict[str, Any]]]
 
 
 class FantasyScoreService:
@@ -26,17 +12,13 @@ class FantasyScoreService:
         fantasy_bet_service: FantasyBetService,
         series_app_service: SeriesService,
         team_app_service: TeamService,
-    ) -> None:
+    ):
         self.fantasy_team_service = fantasy_team_service
         self.fantasy_bet_service = fantasy_bet_service
         self.series_app_service = series_app_service
         self.team_app_service = team_app_service
 
-    # The flag also changes the result: the totals alone, or the totals with
-    # the per-week detail beside them.
-    def _calculate_race_points(
-        self, season: "Season", include_weekly_details: bool = False
-    ) -> RacePoints | tuple[RacePoints, RaceStats, RaceWeeklyDetails]:
+    def _calculate_race_points(self, season, include_weekly_details=False):
         """
         Calculate race points for all races in a season.
 
@@ -48,11 +30,9 @@ class FantasyScoreService:
             tuple: (race_points, race_stats, race_weekly_details) if include_weekly_details=True
                    (race_points,) if include_weekly_details=False
         """
-        race_points: RacePoints = {}
-        race_stats: RaceStats | None = {} if include_weekly_details else None
-        race_weekly_details: RaceWeeklyDetails | None = (
-            {} if include_weekly_details else None
-        )
+        race_points = {}
+        race_stats = {} if include_weekly_details else None
+        race_weekly_details = {} if include_weekly_details else None
 
         for week in range(1, season.number_weeks + 1):
             season_week_series = self.series_app_service.searchForSeasonAndPlayday(
@@ -169,12 +149,8 @@ class FantasyScoreService:
         return race_points
 
     def _calculate_fantasy_team_scores(
-        self,
-        fantasy_team: "FantasyTeam",
-        season: "Season",
-        race_points: RacePoints,
-        include_breakdown: bool = False,
-    ) -> dict[str, Any]:
+        self, fantasy_team, season, race_points, include_breakdown=False
+    ):
         """
         Calculate all score components for a single fantasy team.
 
@@ -366,7 +342,7 @@ class FantasyScoreService:
 
         return result
 
-    def calculateTeamScores(self, season: "Season") -> None:
+    def calculateTeamScores(self, season):
         # Calculate race points using shared method
         race_points = self._calculate_race_points(season, include_weekly_details=False)
 
@@ -408,9 +384,7 @@ class FantasyScoreService:
                 fteam.total_points = scores["total_points"]
                 fteam = self.fantasy_team_service.update_fantasy_team(fteam.id, fteam)
 
-    def getTeamScoreBreakdown(
-        self, fantasy_team_id: int, season: "Season"
-    ) -> dict[str, Any]:
+    def getTeamScoreBreakdown(self, fantasy_team_id, season):
         """
         Get detailed breakdown of how a fantasy team's score was calculated
         Returns a dictionary with all components and their calculations
@@ -487,7 +461,7 @@ class FantasyScoreService:
 
         return breakdown
 
-    def calculatePoints(self, score1: int, score2: int) -> int:
+    def calculatePoints(self, score1, score2):
         if score1 == 2:
             if score2 == 0:
                 return 10

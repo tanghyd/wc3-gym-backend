@@ -2,7 +2,7 @@ import io
 import logging
 import threading
 from io import BytesIO
-from typing import Annotated, Any
+from typing import Annotated
 
 import openpyxl
 import pandas as pd
@@ -21,22 +21,14 @@ from app.api.deps import (
     require_admin,
 )
 from app.exceptions import NotFoundException
-from app.schemas.fantasy_bet import FantasyBet
-from app.schemas.fantasy_team import FantasyTeam
-from app.schemas.map import Map
-from app.schemas.match import Match
-from app.schemas.season import Season
-from app.schemas.series import Series
-from app.schemas.team import Team
-from app.schemas.user import User
-from app.services.fantasy_bets import FantasyBetService
-from app.services.fantasy_teams import FantasyTeamService
-from app.services.maps import MapService
-from app.services.matches import MatchService
-from app.services.seasons import SeasonService
-from app.services.series import SeriesService
-from app.services.teams import TeamService
-from app.services.users import UserService
+from app.models.fantasy_bet import FantasyBetCreate, FantasyBetUpdate
+from app.models.fantasy_team import FantasyTeamCreate, FantasyTeamUpdate
+from app.models.map import MapCreate, MapUpdate
+from app.models.match import MatchCreate, MatchUpdate
+from app.models.season import SeasonCreate, SeasonUpdate
+from app.models.series import SeriesCreate, SeriesUpdate
+from app.models.team import TeamCreate, TeamUpdate
+from app.models.user import UserCreate
 from app.utils.import_util import ImportUtil
 from app.utils.query_util import QueryUtil
 
@@ -46,17 +38,17 @@ router = APIRouter(tags=["import export"])
 
 
 def _process_import(
-    file_bytes: bytes,
-    create_new: bool,
-    season_service: SeasonService,
-    map_service: MapService,
-    team_service: TeamService,
-    user_service: UserService,
-    match_service: MatchService,
-    series_service: SeriesService,
-    fantasy_team_service: FantasyTeamService,
-    fantasy_bet_service: FantasyBetService,
-) -> None:
+    file_bytes,
+    create_new,
+    season_service,
+    map_service,
+    team_service,
+    user_service,
+    match_service,
+    series_service,
+    fantasy_team_service,
+    fantasy_bet_service,
+):
     """
     Helper function to process import. Can be called synchronously or in a thread.
 
@@ -92,14 +84,14 @@ def _process_import(
         season_id = None
         if create_new:
             # Force create new season
-            season = season_service.create_season(Season(season_data))
+            season = season_service.create_season(SeasonCreate(**season_data))
             season_id = season.id
             logger.info(f"Created new season with ID: {season_id}")
         else:
             # If Season ID is missing, auto-create new season instead of error
             if pd.isna(season_row["ID"]):
                 logger.info("Season ID not found in Excel, creating new season")
-                season = season_service.create_season(Season(season_data))
+                season = season_service.create_season(SeasonCreate(**season_data))
                 season_id = season.id
                 logger.info(f"Created new season with ID: {season_id}")
             else:
@@ -109,13 +101,13 @@ def _process_import(
                     season_service.get_season(original_season_id)
                     # Season exists, update it
                     season_service.update_season(
-                        original_season_id, Season(season_data)
+                        original_season_id, SeasonUpdate(**season_data)
                     )
                     season_id = original_season_id
                     logger.info(f"Updated existing season with ID: {season_id}")
                 except NotFoundException:
                     # Season doesn't exist, create it
-                    season = season_service.create_season(Season(season_data))
+                    season = season_service.create_season(SeasonCreate(**season_data))
                     season_id = season.id
                     logger.info(
                         f"Created new season with ID: {season_id} (original ID {original_season_id} not found)"
@@ -146,9 +138,9 @@ def _process_import(
                     existing_maps = map_service.search(query)
                     if existing_maps:
                         map_obj = existing_maps[0]
-                        map_service.update_map(map_obj.id, Map(map_data))
+                        map_service.update_map(map_obj.id, MapUpdate(**map_data))
                     else:
-                        map_obj = map_service.create_map(Map(map_data))
+                        map_obj = map_service.create_map(MapCreate(**map_data))
 
                     if old_map_id:
                         map_id_mapping[old_map_id] = map_obj.id
@@ -174,9 +166,9 @@ def _process_import(
                 existing_teams = team_service.search(query)
                 if existing_teams:
                     team = existing_teams[0]
-                    team_service.update_team(team.id, Team(team_data))
+                    team_service.update_team(team.id, TeamUpdate(**team_data))
                 else:
-                    team = team_service.create_team(Team(team_data))
+                    team = team_service.create_team(TeamCreate(**team_data))
 
                 if old_team_id:
                     team_id_mapping[old_team_id] = team.id
@@ -222,7 +214,7 @@ def _process_import(
                     )
                 else:
                     # User doesn't exist - create new user
-                    user = user_service.create_user(User(user_data))
+                    user = user_service.create_user(UserCreate(**user_data))
                     logger.info(f"Created new user: {user.battleTag} (ID: {user.id})")
 
                 if old_user_id:
@@ -282,9 +274,9 @@ def _process_import(
                 existing_matches = match_service.search(query)
                 if existing_matches:
                     match = existing_matches[0]
-                    match_service.update_match(match.id, Match(match_data))
+                    match_service.update_match(match.id, MatchUpdate(**match_data))
                 else:
-                    match = match_service.create_match(Match(match_data))
+                    match = match_service.create_match(MatchCreate(**match_data))
 
                 if old_match_id:
                     match_id_mapping[old_match_id] = match.id
@@ -367,12 +359,12 @@ def _process_import(
                 existing_series = series_service.search(query)
                 if existing_series:
                     series_service.update_series(
-                        existing_series[0].id, Series(series_data)
+                        existing_series[0].id, SeriesUpdate(**series_data)
                     )
                     if old_series_id:
                         series_id_mapping[old_series_id] = existing_series[0].id
                 else:
-                    series = series_service.create_series(Series(series_data))
+                    series = series_service.create_series(SeriesCreate(**series_data))
                     if old_series_id:
                         series_id_mapping[old_series_id] = series.id
 
@@ -441,11 +433,11 @@ def _process_import(
                     if existing_fteams:
                         fteam = existing_fteams[0]
                         fantasy_team_service.update_fantasy_team(
-                            fteam.id, FantasyTeam(fteam_data)
+                            fteam.id, FantasyTeamUpdate(**fteam_data)
                         )
                     else:
                         fteam = fantasy_team_service.create_fantasy_team(
-                            FantasyTeam(fteam_data)
+                            FantasyTeamCreate(**fteam_data)
                         )
 
                     if old_fteam_id:
@@ -526,10 +518,12 @@ def _process_import(
                     existing_bets = fantasy_bet_service.search_fantasy_bets(query)
                     if existing_bets:
                         fantasy_bet_service.update_fantasy_bet(
-                            existing_bets[0].id, FantasyBet(fbet_data)
+                            existing_bets[0].id, FantasyBetUpdate(**fbet_data)
                         )
                     else:
-                        fantasy_bet_service.create_fantasy_bet(FantasyBet(fbet_data))
+                        fantasy_bet_service.create_fantasy_bet(
+                            FantasyBetCreate(**fbet_data)
+                        )
         except Exception as e:
             logger.warning(f"Fantasy Bets sheet not found or error: {e}")
 
@@ -543,7 +537,7 @@ def _process_import(
 
 
 # import export endpoints
-@router.post("/import", dependencies=[Depends(require_admin)], response_model=None)
+@router.post("/import", dependencies=[Depends(require_admin)])
 def import_season(
     season_service: SeasonServiceDep,
     map_service: MapServiceDep,
@@ -556,7 +550,7 @@ def import_season(
     file: Annotated[UploadFile | None, File()] = None,
     create_new: str = "false",
     background: str = "false",
-) -> JSONResponse | dict[str, Any]:
+):
     """Import complete season data from Excel.
 
     Imports ALL season data (season, maps, teams, players, matches, series)
@@ -635,7 +629,7 @@ def export_season(
     fantasy_team_service: FantasyTeamServiceDep,
     fantasy_bet_service: FantasyBetServiceDep,
     season_id: str | None = None,
-) -> Response:
+):
     """Export complete season data for migration.
 
     Export an Excel file with ALL season data (season, maps, teams, players,
@@ -921,7 +915,7 @@ def export_season(
 
 
 # import export endpoints
-@router.post("/fantasy/import/teams", response_model=None)
+@router.post("/fantasy/import/teams")
 def import_fantasy_teams(
     season_service: SeasonServiceDep,
     user_service: UserServiceDep,
@@ -930,7 +924,7 @@ def import_fantasy_teams(
     file: Annotated[UploadFile | None, File()] = None,
     season_id: str | None = None,
     season_name: str | None = None,
-) -> JSONResponse | dict[str, Any] | None:
+):
     """Import a xlsx with the information for a GNL fantasy season.
 
     Updates the database based on the import sheet.
@@ -985,7 +979,7 @@ def import_fantasy_teams(
                     "discordTag": row.iloc[1],
                     "race": "Random",
                 }
-                captain = user_service.create_user(User(user_data))
+                captain = user_service.create_user(UserCreate(**user_data))
             elif len(users) != 1:
                 raise Exception(
                     f"No or multiple users found for captain[{row.iloc[1]}]: {users}"
@@ -1025,13 +1019,13 @@ def import_fantasy_teams(
             if found_teams and len(found_teams) == 1:
                 team = found_teams[0]
                 fantasy_team = fantasy_team_service.update_fantasy_team(
-                    team.id, FantasyTeam(team_data)
+                    team.id, FantasyTeamUpdate(**team_data)
                 )
             elif len(found_teams) > 1:
                 raise Exception(f"More than one bet found by search: {fteam_q_string}")
             else:
                 fantasy_team = fantasy_team_service.create_fantasy_team(
-                    FantasyTeam(team_data)
+                    FantasyTeamCreate(**team_data)
                 )
 
             players = []
@@ -1065,7 +1059,7 @@ def import_fantasy_teams(
         return JSONResponse({"error": "File type not allowed"}, status_code=400)
 
 
-@router.post("/fantasy/import/bets", response_model=None)
+@router.post("/fantasy/import/bets")
 def import_fantasy_bets(
     season_service: SeasonServiceDep,
     user_service: UserServiceDep,
@@ -1075,7 +1069,7 @@ def import_fantasy_bets(
     file: Annotated[UploadFile | None, File()] = None,
     season_id: str | None = None,
     season_name: str | None = None,
-) -> JSONResponse | dict[str, Any] | None:
+):
     """Import a xlsx with the information for a GNL fantasy season.
 
     Updates the database based on the import sheet.
@@ -1149,8 +1143,7 @@ def import_fantasy_bets(
                     raise Exception(
                         f"Could not identfy series for player: {row.iloc[1]}!"
                     )
-            series.is_fantasy_match = True
-            series_service.update_series(series.id, series)
+            series_service.update_series(series.id, SeriesUpdate(is_fantasy_match=True))
 
         # Load the Google Sheet into a DataFrame
         df_bets = pd.read_excel(file_stream, sheet_name="Bets")
@@ -1228,11 +1221,13 @@ def import_fantasy_bets(
             found_bets = fantasy_bet_service.search_fantasy_bets(bet_query)
             if found_bets and len(found_bets) == 1:
                 bet = found_bets[0]
-                fantasy_bet_service.update_fantasy_bet(bet.id, FantasyBet(bet_data))
+                fantasy_bet_service.update_fantasy_bet(
+                    bet.id, FantasyBetUpdate(**bet_data)
+                )
             elif len(found_bets) > 1:
                 raise Exception(f"More than one bet found by search: {bet_q_string}")
             else:
-                fantasy_bet_service.create_fantasy_bet(FantasyBet(bet_data))
+                fantasy_bet_service.create_fantasy_bet(FantasyBetCreate(**bet_data))
 
         return {"message": "File uploaded successfully and data inserted into database"}
     else:

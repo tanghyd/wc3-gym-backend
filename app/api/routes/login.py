@@ -1,5 +1,5 @@
 import os
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -11,13 +11,13 @@ router = APIRouter(tags=["Authentication"])
 
 
 @router.get("/")
-def index() -> RedirectResponse:
+def index():
     """Send the browser to the API documentation."""
     return RedirectResponse("/docs", status_code=302)
 
 
 @router.post("/login")
-def login(data: Annotated[dict[str, Any], Body()]) -> JSONResponse:
+def login(data: Annotated[dict, Body()]):
     """Exchange the admin token for an access token and a refresh token."""
     token_time = int(os.getenv("TOKEN_TIME"))
     if not token_time:
@@ -36,7 +36,7 @@ def login(data: Annotated[dict[str, Any], Body()]) -> JSONResponse:
 
 
 @router.post("/refresh")
-def refresh(identity: RequireRefresh) -> dict[str, Any]:
+def refresh(identity: RequireRefresh):
     """Exchange a refresh token for a new access token."""
     token_time = int(os.getenv("TOKEN_TIME"))
     if not token_time:

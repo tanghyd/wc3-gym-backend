@@ -3,190 +3,179 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from app.exceptions import DBException, NotFoundException
-from app.models.team import DBTeam
-from app.schemas.team import Team
+from app.exceptions import NotFoundException
+from app.models.team import Team, TeamCreate, TeamPublic, TeamUpdate
 from app.services.base import BaseService
 from app.services.users import UserService
-from app.utils.query_util import QueryElement, QueryUtil
+from app.utils.query_util import QueryUtil
 
 logger = logging.getLogger(__name__)
 
 
 class TeamService(BaseService):
-    def __init__(self, user_app_service: UserService) -> None:
+    def __init__(self, user_app_service: UserService):
         self.user_app_service = user_app_service
 
-    def add(self, team: Team) -> Team:
+    def add(self, team: TeamCreate):
         with self.get_session() as session:
-            new_team = DBTeam.add(session, team.to_db_dict())
-            if not new_team:
-                raise DBException("Team could not be created!")
-            return Team.from_dbteam(new_team)
+            new_team = Team.add(session, team.model_dump())
+            return TeamPublic.from_team(new_team)
 
-    def update(self, team: Team) -> Team:
+    def update(self, team_id, team: TeamUpdate):
         with self.get_session() as session:
-            db_team = DBTeam.update(session, team.id, **team.to_db_dict())
-            if not db_team:
-                raise DBException("Team could not be updated!")
-            return Team.from_dbteam(db_team)
-
-    def update_icon(self, team_id: int, file: bytes) -> Team:
-        with self.get_session() as session:
-            team = DBTeam.update_icon(session, team_id, file)
+            team = Team.update(session, team_id, **team.model_dump(exclude_unset=True))
             if not team:
-                raise DBException("Team icon could not be updated!")
-            return Team.from_dbteam(team)
+                raise NotFoundException("Team not found")
+            return TeamPublic.from_team(team)
 
-    def addPlayers(self, team_id: int, season_id: int, player_ids: list[int]) -> Team:
+    def update_icon(self, team_id, file):
         with self.get_session() as session:
-            team = DBTeam.addPlayers(session, team_id, season_id, player_ids)
+            team = Team.update_icon(session, team_id, file)
             if not team:
-                raise DBException("Team could not be updated!")
-            return Team.from_dbteam(team)
+                raise NotFoundException("Team not found")
+            return TeamPublic.from_team(team)
 
-    def removePlayers(
-        self, team_id: int, season_id: int, player_ids: list[int]
-    ) -> Team:
+    def addPlayers(self, team_id, season_id, player_ids):
         with self.get_session() as session:
-            team = DBTeam.removePlayers(session, team_id, season_id, player_ids)
-            if not team:
-                raise DBException("Team could not be updated!")
-            return Team.from_dbteam(team)
+            team = Team.addPlayers(session, team_id, season_id, player_ids)
+            return TeamPublic.from_team(team)
 
-    def setCoaches(self, team_id: int, season_id: int, coach_ids: list[int]) -> Team:
+    def removePlayers(self, team_id, season_id, player_ids):
         with self.get_session() as session:
-            team = DBTeam.setCoaches(session, team_id, season_id, coach_ids)
-            if not team:
-                raise DBException("Team could not be updated!")
-            return Team.from_dbteam(team)
+            team = Team.removePlayers(session, team_id, season_id, player_ids)
+            return TeamPublic.from_team(team)
 
-    def delete(self, team_id: int) -> None:
+    def setCoaches(self, team_id, season_id, coach_ids):
         with self.get_session() as session:
-            DBTeam.delete(session, team_id)
+            team = Team.setCoaches(session, team_id, season_id, coach_ids)
+            return TeamPublic.from_team(team)
 
-    def get(self, team_id: int) -> Team:
+    def delete(self, team_id):
+        with self.get_session() as session:
+            Team.delete(session, team_id)
+
+    def get(self, team_id):
         with self.get_session() as session:
             from app.models.relationships import DBTeamSeason
 
             # Eager load related entities, disable nested loading
             team = (
                 session.scalars(
-                    select(DBTeam)
+                    select(Team)
                     .options(
-                        joinedload(DBTeam.user_seasons).noload("*"),
-                        joinedload(DBTeam.season_info).joinedload(DBTeamSeason.coach_1),
-                        joinedload(DBTeam.season_info).joinedload(DBTeamSeason.coach_2),
-                        joinedload(DBTeam.season_info).joinedload(DBTeamSeason.coach_3),
+                        joinedload(Team.user_seasons).noload("*"),
+                        joinedload(Team.season_info).joinedload(DBTeamSeason.coach_1),
+                        joinedload(Team.season_info).joinedload(DBTeamSeason.coach_2),
+                        joinedload(Team.season_info).joinedload(DBTeamSeason.coach_3),
                     )
-                    .where(DBTeam.id == team_id)
+                    .where(Team.id == team_id)
                 )
                 .unique()
                 .first()
             )
             if not team:
-                raise DBException("Team could not be found!")
-            return Team.from_dbteam(team)
+                raise NotFoundException("Team not found")
+            return TeamPublic.from_team(team)
 
-    def get_with_nested_users(self, team_id: int) -> Team:
+    def get_with_nested_users(self, team_id):
         with self.get_session() as session:
             from app.models.relationships import DBUserTeamSeason
-            from app.models.user import DBUser
+            from app.models.user import User
 
             # Eager load user_seasons and their users with w3c_stats and team_seasons (gnl_stats) with season info
             team = (
                 session.scalars(
-                    select(DBTeam)
+                    select(Team)
                     .options(
-                        joinedload(DBTeam.user_seasons)
+                        joinedload(Team.user_seasons)
                         .joinedload(DBUserTeamSeason.user)
-                        .joinedload(DBUser.w3c_stats),
-                        joinedload(DBTeam.user_seasons)
+                        .joinedload(User.w3c_stats),
+                        joinedload(Team.user_seasons)
                         .joinedload(DBUserTeamSeason.user)
-                        .joinedload(DBUser.team_seasons)
+                        .joinedload(User.team_seasons)
                         .joinedload(DBUserTeamSeason.season),
-                        joinedload(DBTeam.user_seasons).noload(DBUserTeamSeason.team),
-                        joinedload(DBTeam.season_info).noload("*"),
+                        joinedload(Team.user_seasons).noload(DBUserTeamSeason.team),
+                        joinedload(Team.season_info).noload("*"),
                     )
-                    .where(DBTeam.id == team_id)
+                    .where(Team.id == team_id)
                 )
                 .unique()
                 .first()
             )
             if not team:
-                raise DBException("Team could not be found!")
-            return Team.from_dbteam(team)
+                raise NotFoundException("Team not found")
+            return TeamPublic.from_team(team)
 
-    def get_with_nested_users_by_season(self, team_id: int, season_id: int) -> Team:
+    def get_with_nested_users_by_season(self, team_id, season_id):
         """Get team with users filtered by specific season at database level"""
         with self.get_session() as session:
             from app.models.relationships import DBTeamSeason, DBUserTeamSeason
-            from app.models.user import DBUser
+            from app.models.user import User
 
             # Eager load only user_seasons for the specified season, including w3c_stats and team_seasons (gnl_stats) with season info
             team = (
                 session.scalars(
-                    select(DBTeam)
+                    select(Team)
                     .options(
                         joinedload(
-                            DBTeam.user_seasons.and_(
+                            Team.user_seasons.and_(
                                 DBUserTeamSeason.season_id == season_id
                             )
                         )
                         .joinedload(DBUserTeamSeason.user)
-                        .joinedload(DBUser.w3c_stats),
+                        .joinedload(User.w3c_stats),
                         joinedload(
-                            DBTeam.user_seasons.and_(
+                            Team.user_seasons.and_(
                                 DBUserTeamSeason.season_id == season_id
                             )
                         )
                         .joinedload(DBUserTeamSeason.user)
-                        .joinedload(DBUser.team_seasons)
+                        .joinedload(User.team_seasons)
                         .joinedload(DBUserTeamSeason.season),
-                        joinedload(DBTeam.user_seasons).noload(DBUserTeamSeason.team),
+                        joinedload(Team.user_seasons).noload(DBUserTeamSeason.team),
                         joinedload(
-                            DBTeam.season_info.and_(
-                                DBTeam.season_info.any(season_id=season_id)
+                            Team.season_info.and_(
+                                Team.season_info.any(season_id=season_id)
                             )
                         ).joinedload(DBTeamSeason.coach_1),
                         joinedload(
-                            DBTeam.season_info.and_(
-                                DBTeam.season_info.any(season_id=season_id)
+                            Team.season_info.and_(
+                                Team.season_info.any(season_id=season_id)
                             )
                         ).joinedload(DBTeamSeason.coach_2),
                         joinedload(
-                            DBTeam.season_info.and_(
-                                DBTeam.season_info.any(season_id=season_id)
+                            Team.season_info.and_(
+                                Team.season_info.any(season_id=season_id)
                             )
                         ).joinedload(DBTeamSeason.coach_3),
                     )
-                    .where(DBTeam.id == team_id)
+                    .where(Team.id == team_id)
                 )
                 .unique()
                 .first()
             )
             if not team:
-                raise DBException("Team could not be found!")
-            return Team.from_dbteam(team)
+                raise NotFoundException("Team not found")
+            return TeamPublic.from_team(team)
 
-    def get_icon(self, team_id: int) -> bytes | None:
+    def get_icon(self, team_id):
         with self.get_session() as session:
-            team = session.get(DBTeam, team_id)
+            team = session.get(Team, team_id)
             if not team:
-                raise DBException("Team could not be found!")
+                raise NotFoundException("Team not found")
             return team.icon
 
-    def search(self, query: QueryElement | None) -> list[Team]:
+    def search(self, query):
         with self.get_session() as session:
-            result: list[Team] = []
-            filter = QueryUtil.convertQueryToDBFilter(DBTeam, query)
+            result = []
+            filter = QueryUtil.convertQueryToDBFilter(Team, query)
             # Eager load related entities, disable nested loading
             teams = (
                 session.scalars(
-                    select(DBTeam)
+                    select(Team)
                     .options(
-                        joinedload(DBTeam.user_seasons).noload("*"),
-                        joinedload(DBTeam.season_info).noload("*"),
+                        joinedload(Team.user_seasons).noload("*"),
+                        joinedload(Team.season_info).noload("*"),
                     )
                     .where(filter)
                 )
@@ -199,127 +188,125 @@ class TeamService(BaseService):
                 logger.debug(f"No teams found by searchcriteria: {query}")
                 return result
             for team in teams:
-                result.append(Team.from_dbteam(team))
+                result.append(TeamPublic.from_team(team))
             return result
 
-    def getAll(self) -> list[Team]:
+    def getAll(self):
         with self.get_session() as session:
-            result: list[Team] = []
+            result = []
             # Eager load related entities, disable nested loading
             teams = (
                 session.scalars(
-                    select(DBTeam).options(
-                        joinedload(DBTeam.user_seasons).noload("*"),
-                        joinedload(DBTeam.season_info).noload("*"),
+                    select(Team).options(
+                        joinedload(Team.user_seasons).noload("*"),
+                        joinedload(Team.season_info).noload("*"),
                     )
                 )
                 .unique()
                 .all()
             )
             for team in teams:
-                result.append(Team.from_dbteam(team))
+                result.append(TeamPublic.from_team(team))
             return result
 
-    def getAll_basic(self) -> list[Team]:
+    def getAll_basic(self):
         """Get all teams with basic info only (no users, no seasons)"""
         with self.get_session() as session:
-            result: list[Team] = []
+            result = []
             # Explicitly prevent loading of all relationships
             from sqlalchemy.orm import noload
 
-            teams = session.scalars(select(DBTeam).options(noload("*"))).unique().all()
+            teams = session.scalars(select(Team).options(noload("*"))).unique().all()
             for team in teams:
-                result.append(Team.from_dbteam(team))
+                result.append(TeamPublic.from_team(team))
             return result
 
-    def getAll_by_season(self, season_id: int) -> list[Team]:
+    def getAll_by_season(self, season_id):
         """Get all teams for a season with season_info but without users"""
         with self.get_session() as session:
-            result: list[Team] = []
+            result = []
             from sqlalchemy.orm import noload
 
             # Load season_info but not user_seasons
             teams = (
                 session.scalars(
-                    select(DBTeam)
+                    select(Team)
                     .options(
-                        noload(DBTeam.user_seasons),
-                        joinedload(DBTeam.season_info).noload("*"),
+                        noload(Team.user_seasons),
+                        joinedload(Team.season_info).noload("*"),
                     )
-                    .join(DBTeam.season_info)
-                    .where(DBTeam.season_info.any(season_id=season_id))
+                    .join(Team.season_info)
+                    .where(Team.season_info.any(season_id=season_id))
                 )
                 .unique()
                 .all()
             )
             for team in teams:
-                result.append(Team.from_dbteam(team))
+                result.append(TeamPublic.from_team(team))
             return result
 
-    def getAll_with_nested_users(self) -> list[Team]:
+    def getAll_with_nested_users(self):
         with self.get_session() as session:
             from app.models.relationships import DBTeamSeason, DBUserTeamSeason
-            from app.models.user import DBUser
+            from app.models.user import User
 
-            result: list[Team] = []
+            result = []
             # Eager load user_seasons and their users with w3c_stats and team_seasons (gnl_stats) with season info
             # Also eager load coaches from season_info
             teams = (
                 session.scalars(
-                    select(DBTeam).options(
-                        joinedload(DBTeam.user_seasons)
+                    select(Team).options(
+                        joinedload(Team.user_seasons)
                         .joinedload(DBUserTeamSeason.user)
-                        .joinedload(DBUser.w3c_stats),
-                        joinedload(DBTeam.user_seasons)
+                        .joinedload(User.w3c_stats),
+                        joinedload(Team.user_seasons)
                         .joinedload(DBUserTeamSeason.user)
-                        .joinedload(DBUser.team_seasons)
+                        .joinedload(User.team_seasons)
                         .joinedload(DBUserTeamSeason.season),
-                        joinedload(DBTeam.user_seasons).noload(DBUserTeamSeason.team),
-                        joinedload(DBTeam.season_info).joinedload(DBTeamSeason.coach_1),
-                        joinedload(DBTeam.season_info).joinedload(DBTeamSeason.coach_2),
-                        joinedload(DBTeam.season_info).joinedload(DBTeamSeason.coach_3),
+                        joinedload(Team.user_seasons).noload(DBUserTeamSeason.team),
+                        joinedload(Team.season_info).joinedload(DBTeamSeason.coach_1),
+                        joinedload(Team.season_info).joinedload(DBTeamSeason.coach_2),
+                        joinedload(Team.season_info).joinedload(DBTeamSeason.coach_3),
                     )
                 )
                 .unique()
                 .all()
             )
             for team in teams:
-                result.append(Team.from_dbteam(team))
+                result.append(TeamPublic.from_team(team))
             return result
 
-    def create_team(self, team: Team) -> Team:
-        team.id = None
+    def create_team(self, team: TeamCreate):
         return self.add(team)
 
-    def update_team(self, team_id: int, team: Team) -> Team:
-        team.id = team_id
-        return self.update(team)
+    def update_team(self, team_id: int, team: TeamUpdate):
+        return self.update(team_id, team)
 
-    def update_team_icon(self, team_id: int, file: bytes) -> Team:
+    def update_team_icon(self, team_id: int, file):
         return self.update_icon(team_id, file)
 
-    def delete_team(self, team_id: int) -> None:
+    def delete_team(self, team_id: int):
         self.delete(team_id)
 
-    def get_team(self, team_id: int) -> Team:
+    def get_team(self, team_id: int):
         team_data = self.get(team_id)
         if not team_data:
             raise NotFoundException(f"Team not found by Id: {team_id}")
         return team_data
 
-    def get_team_icon(self, team_id: int) -> bytes | None:
+    def get_team_icon(self, team_id: int):
         return self.get_icon(team_id)
 
-    def get_team_season(self, team_id: int, season_id: int) -> Team:
+    def get_team_season(self, team_id: int, season_id):
         team_data = self.get_with_nested_users_by_season(team_id, season_id)
         if not team_data:
             raise NotFoundException(f"Team not found by Id: {team_id}")
         # Data is already filtered by season at database level
         return team_data
 
-    def get_teams_season(self, season_id: int) -> list[Team]:
+    def get_teams_season(self, season_id: int):
         teams_data = self.getAll_with_nested_users()
-        result: list[Team] = []
+        result = []
         if teams_data:
             for team_data in teams_data:
                 # filter users and season info based on season id
@@ -342,10 +329,10 @@ class TeamService(BaseService):
                 result.append(team_data)
         return result
 
-    def get_teams_season_basic(self, season_id: int) -> list[Team]:
+    def get_teams_season_basic(self, season_id: int):
         """Get teams for a season with season_info but without users (for list views)"""
         teams_data = self.getAll_by_season(season_id)
-        result: list[Team] = []
+        result = []
         if teams_data:
             for team_data in teams_data:
                 # Filter season_info to only include the requested season
@@ -357,10 +344,10 @@ class TeamService(BaseService):
                 result.append(team_data)
         return result
 
-    def syncW3CStatsTeam(self, team_id: int, season_id: int) -> None:
+    def syncW3CStatsTeam(self, team_id, season_id):
         team = self.get_team_season(team_id, season_id)
         users = team.player_by_season.get(season_id)
-        sync_errors: list[str] = []
+        sync_errors = []
 
         if users:
             for u in users:

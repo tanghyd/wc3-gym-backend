@@ -1,35 +1,59 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Annotated
 
-from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import DBModel
+from app.models.koth_match import KothMatch, KothMatchPublic
+from app.models.koth_signup import KothSignup, KothSignupPublic
+from app.models.types import IsoDateTime, NoneToList
 
-if TYPE_CHECKING:
-    from app.models.koth_match import DBKothMatch
-    from app.models.koth_signup import DBKothSignup
+
+class KothEventBase(SQLModel):
+    name: str = Field(max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    event_date: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = True
+    bracket_1_threshold: int = 1450  # < this value
+    bracket_2_threshold: int = 1600  # >= bracket_1 and < this value
+    # bracket 3 is >= bracket_2_threshold
 
 
-class DBKothEvent(DBModel):
+class KothEvent(KothEventBase, DBModel, table=True):
     __tablename__ = "koth_events"
     __table_args__ = {"mysql_charset": "utf8mb4"}
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100))
-    description: Mapped[str | None] = mapped_column(String(500))
-    event_date: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    is_active: Mapped[bool] = mapped_column(default=True)
-    bracket_1_threshold: Mapped[int] = mapped_column(default=1450)  # < this value
-    bracket_2_threshold: Mapped[int] = mapped_column(
-        default=1600
-    )  # >= bracket_1 and < this value
-    # bracket 3 is >= bracket_2_threshold
+    id: int | None = Field(default=None, primary_key=True)
 
     # Relationships
-    signups: Mapped[list["DBKothSignup"]] = relationship(
-        back_populates="event", cascade="all, delete-orphan"
+    signups: list[KothSignup] = Relationship(
+        back_populates="event",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    matches: Mapped[list["DBKothMatch"]] = relationship(
-        back_populates="event", cascade="all, delete-orphan"
+    matches: list[KothMatch] = Relationship(
+        back_populates="event",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+class KothEventCreate(KothEventBase):
+    pass
+
+
+class KothEventUpdate(SQLModel):
+    name: str | None = None
+    description: str | None = None
+    event_date: datetime | None = None
+    is_active: bool | None = None
+    bracket_1_threshold: int | None = None
+    bracket_2_threshold: int | None = None
+
+
+class KothEventPublic(KothEventBase):
+    id: int
+    event_date: IsoDateTime | None = None
+    signups: Annotated[list[KothSignupPublic], NoneToList] = []
+    matches: Annotated[list[KothMatchPublic], NoneToList] = []
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")

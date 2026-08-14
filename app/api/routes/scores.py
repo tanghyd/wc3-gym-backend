@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -12,11 +11,8 @@ from app.api.deps import (
     require_admin,
 )
 from app.exceptions import NotFoundException
-from app.schemas.team import Team, TeamReduced
-from app.services.matches import MatchService
-from app.services.scores import ScoreService
-from app.services.seasons import SeasonService
-from app.services.series import SeriesService
+from app.models.match import MatchUpdate
+from app.models.series import SeriesUpdate
 from app.utils.query_util import QueryUtil
 
 logger = logging.getLogger(__name__)
@@ -28,7 +24,7 @@ calculation_progress = {}
 
 
 @router.get("/season/{season_id}/calculate/status")
-def get_calc_status(season_id: int) -> dict[str, Any]:
+def get_calc_status(season_id: int):
     """Get the current calculation progress for a season"""
     progress = calculation_progress.get(season_id)
 
@@ -51,7 +47,7 @@ def calc_score(
     match_service: MatchServiceDep,
     series_service: SeriesServiceDep,
     score_service: ScoreServiceDep,
-) -> JSONResponse:
+):
     """Calculate the scores of a given season.
 
     Calculates series, match and team scores for the given season. This is a
@@ -87,15 +83,11 @@ def calc_score(
 
 
 def perform_calculation(
-    season_id: int,
-    season_service: SeasonService,
-    match_service: MatchService,
-    series_service: SeriesService,
-    score_service: ScoreService,
-) -> dict[str, Any] | None:
+    season_id: int, season_service, match_service, series_service, score_service
+):
     """Perform the actual score calculation with progress tracking"""
     try:
-        teams: dict[int, Team | TeamReduced] = {}
+        teams = {}
         season = season_service.get_season(season_id)
         if season:
             season = season.to_dict()
@@ -139,17 +131,25 @@ def perform_calculation(
                         str(e) + " for series with id " + str(singleSeries.id)
                     )
 
-                series_service.update_series(calculatedSeries.id, calculatedSeries)
+                series_service.update_series(
+                    calculatedSeries.id,
+                    SeriesUpdate(
+                        player1_points=calculatedSeries.player1_points,
+                        player2_points=calculatedSeries.player2_points,
+                    ),
+                )
                 team1_points += calculatedSeries.player1_points
                 team2_points += calculatedSeries.player2_points
 
+            match_service.update_match(
+                match.id,
+                MatchUpdate(team1_score=team1_points, team2_score=team2_points),
+            )
             match.team1_score = team1_points
             match.team2_score = team2_points
 
             teams[match.team1.id] = match.team1
             teams[match.team2.id] = match.team2
-
-            match_service.update_match(match.id, match)
 
         # Update team scores
         calculation_progress[season_id]["message"] = "Updating team standings..."

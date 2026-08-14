@@ -14,8 +14,6 @@ fixture empties it between tests.
 import os
 
 import pytest
-from fastapi import FastAPI
-from httpx2 import Client
 
 # create_app reads these. Set before the app import so the values are the
 # same with and without a .env file (load_dotenv does not override).
@@ -30,16 +28,24 @@ from app.main import create_app
 
 
 @pytest.fixture(scope="session")
-def app(tmp_path_factory: pytest.TempPathFactory) -> None:
-    # A file, not :memory:. init_schema disposes the pool, and disposing
-    # the only connection of an in-memory SQLite database deletes the
-    # tables with it.
+def db_url(tmp_path_factory):
+    """A migrated database. A file, not :memory:, because the migration and
+    the application open their own connections to it."""
+    from tests.migrate import upgrade_to_head
+
     db_file = tmp_path_factory.mktemp("db") / "test.sqlite"
-    return create_app(db_url=f"sqlite:///{db_file}")
+    url = f"sqlite:///{db_file}"
+    upgrade_to_head(url)
+    return url
+
+
+@pytest.fixture(scope="session")
+def app(db_url):
+    return create_app(db_url=db_url)
 
 
 @pytest.fixture
-def client(app: FastAPI) -> None:
+def client(app):
     from fastapi.testclient import TestClient
 
     # follow_redirects off, like the Flask test client, so a 302 is
@@ -49,21 +55,22 @@ def client(app: FastAPI) -> None:
 
 
 @pytest.fixture(autouse=True)
-def clean_db(app: FastAPI) -> None:
+def clean_db(app):
     """Empty every table after each test. Children first, so no foreign
     key constraint fires."""
     yield
+    from sqlmodel import SQLModel
+
     from app.core.db import Session
-    from app.models.base import Base
 
     with Session() as session:
-        for table in reversed(Base.metadata.sorted_tables):
+        for table in reversed(SQLModel.metadata.sorted_tables):
             session.execute(table.delete())
         session.commit()
 
 
 @pytest.fixture
-def seeded(app: FastAPI) -> None:
+def seeded(app):
     """A small consistent league. Returns the ids the tests refer to."""
     from app.core.db import Session
     from tests.seed import seed_league
@@ -75,7 +82,7 @@ def seeded(app: FastAPI) -> None:
 
 
 @pytest.fixture
-def auth_headers(client: Client) -> None:
+def auth_headers(client):
     resp = client.post("/login", json={"token": "test-admin-token"})
     assert resp.status_code == 200
     token = resp.json()["access_token"]
@@ -83,7 +90,7 @@ def auth_headers(client: Client) -> None:
 
 
 @pytest.fixture
-def refresh_headers(client: Client) -> None:
+def refresh_headers(client):
     resp = client.post("/login", json={"token": "test-admin-token"})
     assert resp.status_code == 200
     token = resp.json()["refresh_token"]

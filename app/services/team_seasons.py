@@ -1,35 +1,34 @@
 import logging
 
-from app.exceptions import DBException
+from app.exceptions import NotFoundException
 from app.models.relationships import DBTeamSeason
-from app.schemas.season_info import SeasonInfo
+from app.models.season_info import SeasonInfoPublic, SeasonInfoUpdate
 from app.services.base import BaseService
 
 logger = logging.getLogger(__name__)
 
 
 class TeamSeasonService(BaseService):
-    # add, delete and get build an exception and hand it back as the result.
-    # They are typed as they behave; see the note in the pull request.
-    def add(self) -> Exception:
+    def add(self):
         return Exception("Method not available")
 
-    def update(self, team_id: int, season_info: SeasonInfo) -> SeasonInfo | None:
+    def update(self, team_id: int, season_info: SeasonInfoUpdate):
         with self.get_session() as session:
-            db_season_info = DBTeamSeason.updateSeasonInfo(
-                session, season_info.season_id, team_id, **season_info.to_db_dict()
+            season_info = DBTeamSeason.updateSeasonInfo(
+                session,
+                season_info.season_id,
+                team_id,
+                **season_info.model_dump(),
             )
-            if not db_season_info:
-                raise DBException("Season could not be updated!")
-            return SeasonInfo.from_dbseasoninfo(db_season_info)
+            if not season_info:
+                raise NotFoundException("Team season not found")
+            return SeasonInfoPublic.from_team_season(season_info)
 
-    def delete(self) -> Exception:
+    def delete(self):
         return Exception("Method not available")
 
-    def get(self) -> Exception:
+    def get(self):
         return Exception("Method not available")
 
-    def update_team_season(
-        self, team_id: int, season_info: SeasonInfo
-    ) -> SeasonInfo | None:
+    def update_team_season(self, team_id: int, season_info: SeasonInfoUpdate):
         return self.update(team_id, season_info)

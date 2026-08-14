@@ -1,75 +1,60 @@
 import logging
 
-from app.exceptions import DBException, NotFoundException
-from app.models.map import DBMap
-from app.schemas.map import Map
+from app.exceptions import NotFoundException
+from app.models.map import Map, MapCreate, MapPublic, MapUpdate
 from app.services.base import BaseService
-from app.utils.query_util import QueryElement, QueryUtil
+from app.utils.query_util import QueryUtil
 
 logger = logging.getLogger(__name__)
 
 
 class MapService(BaseService):
-    def add(self, map: Map) -> Map:
+    def add(self, map: MapCreate):
         with self.get_session() as session:
-            db_map = DBMap.add(session, map.to_dict())
-            if not db_map:
-                raise DBException("Map could not be created!")
-            return Map.from_dbmap(db_map)
+            new_map = Map.add(session, map.model_dump())
+            return MapPublic.model_validate(new_map)
 
-    def update(self, map: Map) -> Map:
+    def update(self, map_id, map: MapUpdate):
         with self.get_session() as session:
-            db_map = DBMap.update(session, map.id, **map.to_dict())
-            if not db_map:
-                raise DBException("Map could not be updated")
-            return Map.from_dbmap(db_map)
+            updated = Map.update(session, map_id, **map.model_dump())
+            if not updated:
+                raise NotFoundException("Map not found")
+            return MapPublic.model_validate(updated)
 
-    def delete(self, map_id: int) -> None:
+    def delete(self, map_id):
         with self.get_session() as session:
-            DBMap.delete(session, map_id)
+            Map.delete(session, map_id)
 
-    def get(self, map_id: int) -> Map | None:
+    def get(self, map_id):
         with self.get_session() as session:
-            map = DBMap.getById(session, map_id)
+            map = Map.getById(session, map_id)
             if not map:
                 return None
-            return Map.from_dbmap(map)
+            return MapPublic.model_validate(map)
 
-    def search(self, query: QueryElement | None) -> list[Map]:
+    def search(self, query):
         with self.get_session() as session:
-            result: list[Map] = []
-            filter = QueryUtil.convertQueryToDBFilter(DBMap, query)
-            maps = DBMap.search(session, filter)
+            filter = QueryUtil.convertQueryToDBFilter(Map, query)
+            maps = Map.search(session, filter)
             if not maps:
                 logger.debug(f"No maps found by searchcriteria: {query}")
-                return result
+                return []
+            return [MapPublic.model_validate(map) for map in maps]
 
-            for map in maps:
-                result.append(Map.from_dbmap(map))
-            return result
-
-    def getAll(self) -> list[Map]:
+    def getAll(self):
         with self.get_session() as session:
-            result: list[Map] = []
-            maps = DBMap.getAll(session)
+            return [MapPublic.model_validate(map) for map in Map.getAll(session)]
 
-            for map in maps:
-                result.append(Map.from_dbmap(map))
-            return result
-
-    def create_map(self, map: Map) -> Map:
-        # remove id, db generates the id
-        map.id = None
+    def create_map(self, map: MapCreate):
         return self.add(map)
 
-    def update_map(self, map_id: int, map: Map) -> Map:
-        map.id = map_id
-        return self.update(map)
+    def update_map(self, map_id, map: MapUpdate):
+        return self.update(map_id, map)
 
-    def delete_map(self, map_id: int) -> None:
+    def delete_map(self, map_id: int):
         self.delete(map_id)
 
-    def get_map(self, map_id: int) -> Map:
+    def get_map(self, map_id: int):
         map_data = self.get(map_id)
         if not map_data:
             raise NotFoundException(f"Map not found by Id: {map_id}")

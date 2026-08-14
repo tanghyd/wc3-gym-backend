@@ -14,22 +14,21 @@ import pytest
 from app.services.scores import ScoreService
 
 
-class StubSetting:
-    def __init__(self, value: str) -> None:
-        self.value = value
-
-
 class StubSettings:
-    def __init__(self, score_system: str | None = None) -> None:
+    def __init__(self, score_system=None):
         self._value = score_system
 
-    def get_by_key(self, key: str) -> StubSetting | None:
+    def get_by_key(self, key):
         if self._value is None:
             return None
-        return StubSetting(self._value)
+
+        class Setting:
+            value = self._value
+
+        return Setting()
 
 
-def make_service(score_system: str | None = None) -> ScoreService:
+def make_service(score_system=None):
     return ScoreService(
         match_service=None,
         serires_service=None,
@@ -49,7 +48,7 @@ def make_service(score_system: str | None = None) -> ScoreService:
         (0, 2, 0),
     ],
 )
-def test_standard_scores(player: int, opponent: int, expected: int) -> None:
+def test_standard_scores(player, opponent, expected):
     service = make_service("standard")
     assert service.getScoreByMapScore(player, opponent) == expected
 
@@ -63,21 +62,19 @@ def test_standard_scores(player: int, opponent: int, expected: int) -> None:
         (0, 2, 0),
     ],
 )
-def test_helpstone_scores(player: int, opponent: int, expected: int) -> None:
+def test_helpstone_scores(player, opponent, expected):
     service = make_service("helpstone")
     assert service.getScoreByMapScore(player, opponent) == expected
 
 
-def test_unset_score_system_falls_back_to_standard(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_unset_score_system_falls_back_to_standard(monkeypatch):
     monkeypatch.delenv("SCORE_SYSTEM", raising=False)
     service = make_service(None)
     assert service.getScoreByMapScore(2, 0) == 3
     assert service.getMaxPointsPerSeries() == 3
 
 
-def test_unplayed_series_has_no_points() -> None:
+def test_unplayed_series_has_no_points():
     service = make_service("standard")
     assert service.getScoreByMapScore(None, None) is None
 
@@ -91,12 +88,12 @@ def test_unplayed_series_has_no_points() -> None:
         (None, 1),  # half-reported result
     ],
 )
-def test_invalid_scores_raise(player: int, opponent: int) -> None:
+def test_invalid_scores_raise(player, opponent):
     service = make_service("standard")
     with pytest.raises(Exception, match="Score is not valid"):
         service.getScoreByMapScore(player, opponent)
 
 
-def test_max_points_per_series() -> None:
+def test_max_points_per_series():
     assert make_service("standard").getMaxPointsPerSeries() == 3
     assert make_service("helpstone").getMaxPointsPerSeries() == 4

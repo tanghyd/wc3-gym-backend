@@ -3,7 +3,7 @@ import pandas as pd
 
 class ImportUtil:
     @staticmethod
-    def isNa[T](value: T) -> T | None:
+    def isNa(value):
         if pd.isna(value):
             return None
         return value

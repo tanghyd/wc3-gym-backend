@@ -4,7 +4,7 @@
 name = "app"
 version = "1.0.0"
 description = "Flask REST API for the GNL (Gym Newbie League) esports platform"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "requests",
     "gspread",
@@ -20,6 +20,8 @@ dependencies = [
     "fastapi>=0.141.1",
     "uvicorn>=0.52.3",
     "python-multipart>=0.0.32",
+    "sqlmodel>=0.0.39",
+    "alembic>=1.19.1",
 ]
 
 [build-system]
@@ -35,11 +37,6 @@ dev = [
 ]
 
 [tool.ruff.lint]
-# Every function annotates its arguments and its return type. ruff reads
-# requires-python above, so it accepts the syntax of that version and asks
-# for nothing older.
-extend-select = ["ANN"]
-
 # Findings in existing code, suppressed rather than fixed in the ruff
 # rollout. To burn down: fix a rule's findings, then remove it from this list.
 ignore = [
@@ -52,12 +49,6 @@ ignore = [
     "TRY004",  # fixing it changes the raised exception type
     "TRY401",  # redundant exception object in logging.exception
 ]
-
-[tool.ruff.lint.per-file-ignores]
-# The validator helpers here run before pydantic has checked anything, so the
-# value they take really is arbitrary: a request body, or a cell from the xlsx
-# import. Any is the honest annotation for it.
-"app/schemas/base.py" = ["ANN401"]
 
 [tool.pytest]
 # Collect from tests/ only. A non-empty table here also anchors pytest's

@@ -1,110 +1,103 @@
 import logging
-from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, noload
 
-from app.exceptions import DBException, NotFoundException
-from app.models.season import DBSeason
-from app.schemas.season import Season
+from app.exceptions import NotFoundException
+from app.models.season import Season, SeasonCreate, SeasonPublic, SeasonUpdate
+from app.models.user import UserPublic
 from app.services.base import BaseService
-from app.utils.query_util import QueryElement, QueryUtil
-
-if TYPE_CHECKING:
-    from app.schemas.user import User
+from app.utils.query_util import QueryUtil
 
 logger = logging.getLogger(__name__)
 
 
 class SeasonService(BaseService):
-    def add(self, season: Season) -> Season:
+    def add(self, season: SeasonCreate):
         with self.get_session() as session:
-            new_season = DBSeason.add(session, season.to_db_dict())
+            new_season = Season.add(session, season.model_dump())
+            return SeasonPublic.from_season(new_season)
+
+    def update(self, season_id, season: SeasonUpdate):
+        with self.get_session() as session:
+            season = Season.update(
+                session, season_id, **season.model_dump(exclude_unset=True)
+            )
             # Example usage
-            if not new_season:
-                raise DBException("Season could not be created!")
-            return Season.from_dbseason(new_season)
+            if not season:
+                raise NotFoundException("Season not found")
+            return SeasonPublic.from_season(season)
 
-    def update(self, season: Season) -> Season:
+    def delete(self, season_id):
         with self.get_session() as session:
-            db_season = DBSeason.update(session, season.id, **season.to_db_dict())
-            # Example usage
-            if not db_season:
-                raise DBException("Season could not be updated!")
-            return Season.from_dbseason(db_season)
+            Season.delete(session, season_id)
 
-    def delete(self, season_id: int) -> None:
-        with self.get_session() as session:
-            DBSeason.delete(session, season_id)
-
-    def get(self, season_id: int) -> Season:
+    def get(self, season_id):
         with self.get_session() as session:
             from app.models.relationships import DBMapSeason
 
             # Eager load related entities, disable nested loading except for maps
             season = (
                 session.scalars(
-                    select(DBSeason)
+                    select(Season)
                     .options(
-                        joinedload(DBSeason.user_teams).noload("*"),
-                        joinedload(DBSeason.teams).noload("*"),
-                        joinedload(DBSeason.maps).joinedload(DBMapSeason.map),
-                        noload(DBSeason.signup_users),
+                        joinedload(Season.user_teams).noload("*"),
+                        joinedload(Season.teams).noload("*"),
+                        joinedload(Season.maps).joinedload(DBMapSeason.map),
+                        noload(Season.signup_users),
                     )
-                    .where(DBSeason.id == season_id)
+                    .where(Season.id == season_id)
                 )
                 .unique()
                 .first()
             )
             # Example usage
             if not season:
-                raise DBException("Season could not be found!")
-            return Season.from_dbseason(season)
+                raise NotFoundException("Season not found")
+            return SeasonPublic.from_season(season)
 
-    def getAll(self) -> list[Season]:
+    def getAll(self):
         with self.get_session() as session:
-            result: list[Season] = []
+            result = []
             from app.models.relationships import DBMapSeason
 
             # Eager load related entities, disable nested loading except for maps
             seasons = (
                 session.scalars(
-                    select(DBSeason).options(
-                        joinedload(DBSeason.user_teams).noload("*"),
-                        joinedload(DBSeason.teams).noload("*"),
-                        joinedload(DBSeason.maps).joinedload(DBMapSeason.map),
-                        noload(DBSeason.signup_users),
+                    select(Season).options(
+                        joinedload(Season.user_teams).noload("*"),
+                        joinedload(Season.teams).noload("*"),
+                        joinedload(Season.maps).joinedload(DBMapSeason.map),
+                        noload(Season.signup_users),
                     )
                 )
                 .unique()
                 .all()
             )
             for season in seasons:
-                result.append(Season.from_dbseason(season))
+                result.append(SeasonPublic.from_season(season))
             return result
 
-    def addTeams(self, season_id: int, team_ids: list[int]) -> Season:
+    def addTeams(self, season_id, team_ids):
         with self.get_session() as session:
-            season = DBSeason.addTeams(session, season_id, team_ids)
-            if not season:
-                raise DBException("Season could not be updated!")
-            return Season.from_dbseason(season)
+            season = Season.addTeams(session, season_id, team_ids)
+            return SeasonPublic.from_season(season)
 
-    def search(self, query: QueryElement | None) -> list[Season]:
+    def search(self, query):
         with self.get_session() as session:
-            result: list[Season] = []
+            result = []
             from app.models.relationships import DBMapSeason
 
-            filter = QueryUtil.convertQueryToDBFilter(DBSeason, query)
+            filter = QueryUtil.convertQueryToDBFilter(Season, query)
             # Eager load related entities, disable nested loading except for maps
             seasons = (
                 session.scalars(
-                    select(DBSeason)
+                    select(Season)
                     .options(
-                        joinedload(DBSeason.user_teams).noload("*"),
-                        joinedload(DBSeason.teams).noload("*"),
-                        joinedload(DBSeason.maps).joinedload(DBMapSeason.map),
-                        noload(DBSeason.signup_users),
+                        joinedload(Season.user_teams).noload("*"),
+                        joinedload(Season.teams).noload("*"),
+                        joinedload(Season.maps).joinedload(DBMapSeason.map),
+                        noload(Season.signup_users),
                     )
                     .where(filter)
                 )
@@ -117,91 +110,82 @@ class SeasonService(BaseService):
                 logger.debug(f"No seasons found by searchcriteria: {query}")
                 return result
             for season in seasons:
-                result.append(Season.from_dbseason(season))
+                result.append(SeasonPublic.from_season(season))
             return result
 
-    def removeTeams(self, season_id: int, team_ids: list[int]) -> Season:
+    def removeTeams(self, season_id, team_ids):
         with self.get_session() as session:
-            season = DBSeason.removeTeams(session, season_id, team_ids)
-            if not season:
-                raise DBException("Season could not be updated!")
-            return Season.from_dbseason(season)
+            season = Season.removeTeams(session, season_id, team_ids)
+            return SeasonPublic.from_season(season)
 
-    def addMaps(self, season_id: int, map_ids: list[int]) -> Season:
+    def addMaps(self, season_id, map_ids):
         with self.get_session() as session:
-            season = DBSeason.addMaps(session, season_id, map_ids)
-            return Season.from_dbseason(season)
+            season = Season.addMaps(session, season_id, map_ids)
+            return SeasonPublic.from_season(season)
 
-    def removeMaps(self, season_id: int, map_ids: list[int]) -> Season:
+    def removeMaps(self, season_id, map_ids):
         with self.get_session() as session:
-            season = DBSeason.removeMaps(session, season_id, map_ids)
-            return Season.from_dbseason(season)
+            season = Season.removeMaps(session, season_id, map_ids)
+            return SeasonPublic.from_season(season)
 
-    def addUserSignup(self, season_id: int, user_ids: list[int]) -> Season:
+    def addUserSignup(self, season_id, user_ids):
         with self.get_session() as session:
-            season = DBSeason.addUserSignup(session, season_id, user_ids)
-            if not season:
-                raise DBException("Season could not be updated!")
-            return Season.from_dbseason(season)
+            season = Season.addUserSignup(session, season_id, user_ids)
+            return SeasonPublic.from_season(season)
 
-    def removeUserSignup(self, season_id: int, user_ids: list[int]) -> Season:
+    def removeUserSignup(self, season_id, user_ids):
         with self.get_session() as session:
-            season = DBSeason.removeUserSignup(session, season_id, user_ids)
-            if not season:
-                raise DBException("Season could not be updated!")
-            return Season.from_dbseason(season)
+            season = Season.removeUserSignup(session, season_id, user_ids)
+            return SeasonPublic.from_season(season)
 
-    def getSignedUpUsers(self, season_id: int) -> list["User"]:
+    def getSignedUpUsers(self, season_id):
         with self.get_session() as session:
             from app.models.relationships import DBUserSeasonSignup
-            from app.models.user import DBUser
-            from app.schemas.user import User
+            from app.models.user import User
 
             # Eager load signup users with their user data and w3c_stats
             season = (
                 session.scalars(
-                    select(DBSeason)
+                    select(Season)
                     .options(
-                        joinedload(DBSeason.signup_users)
+                        joinedload(Season.signup_users)
                         .joinedload(DBUserSeasonSignup.user)
-                        .joinedload(DBUser.w3c_stats)
+                        .joinedload(User.w3c_stats)
                         .noload("*"),
-                        joinedload(DBSeason.signup_users)
+                        joinedload(Season.signup_users)
                         .joinedload(DBUserSeasonSignup.user)
-                        .joinedload(DBUser.team_seasons)
+                        .joinedload(User.team_seasons)
                         .noload("*"),
                     )
-                    .where(DBSeason.id == season_id)
+                    .where(Season.id == season_id)
                 )
                 .unique()
                 .first()
             )
 
             if not season:
-                raise DBException("Season could not be found!")
+                raise NotFoundException("Season not found")
 
-            result: list[User] = []
+            result = []
             if season.signup_users:
                 for signup in season.signup_users:
                     if signup.user:
-                        user_dto = User.from_dbuser(signup.user)
+                        user_dto = UserPublic.from_user(signup.user)
                         if user_dto:
                             result.append(user_dto)
 
             return result
 
-    def create_season(self, season: Season) -> Season:
-        season.id = None
+    def create_season(self, season: SeasonCreate):
         return self.add(season)
 
-    def update_season(self, season_id: int, season: Season) -> Season:
-        season.id = season_id
-        return self.update(season)
+    def update_season(self, season_id: int, season: SeasonUpdate):
+        return self.update(season_id, season)
 
-    def delete_season(self, season_id: int) -> None:
+    def delete_season(self, season_id: int):
         self.delete(season_id)
 
-    def get_season(self, season_id: int) -> Season:
+    def get_season(self, season_id: int):
         season_data = self.get(season_id)
         if not season_data:
             raise NotFoundException(f"Season not found by Id: {season_id}")
