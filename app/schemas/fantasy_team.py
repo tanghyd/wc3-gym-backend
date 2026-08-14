@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from pydantic import field_serializer
 
@@ -7,6 +7,10 @@ from app.schemas.base import APISchema, DropNoneItems, NumToStr
 from app.schemas.season import Season
 from app.schemas.team import Team
 from app.schemas.user import User
+
+if TYPE_CHECKING:
+    from app.models.fantasy_team import DBFantasyTeam
+
 
 DB_FIELDS = {
     "name",
@@ -46,14 +50,16 @@ class FantasyTeam(APISchema):
     total_points: int | None = None
 
     @field_serializer("drafted_players", when_used="json")
-    def _drafted_players_json(self, value):
+    def _drafted_players_json(
+        self, value: list[User] | None
+    ) -> list[dict[str, Any]] | None:
         return [user.to_dict() for user in value] if value else None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbfantasyteam(cls, fteam):
+    def from_dbfantasyteam(cls, fteam: "DBFantasyTeam | None") -> Self | None:
         if not fteam:
             return None
 
@@ -86,7 +92,7 @@ class FantasyTeam(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

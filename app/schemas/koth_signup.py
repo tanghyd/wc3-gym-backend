@@ -1,6 +1,10 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, EnumValue
+
+if TYPE_CHECKING:
+    from app.models.koth_signup import DBKothSignup
+
 
 
 class KothSignup(APISchema):
@@ -15,11 +19,11 @@ class KothSignup(APISchema):
     is_king: int | None = None
     is_active: int | None = 1
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_db_signup(cls, signup):
+    def from_db_signup(cls, signup: "DBKothSignup | None") -> Self | None:
         if not signup:
             return None
 

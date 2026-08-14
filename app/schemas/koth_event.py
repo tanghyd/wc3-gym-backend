@@ -1,8 +1,12 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, IsoDateTime, NoneToList
 from app.schemas.koth_match import KothMatch
 from app.schemas.koth_signup import KothSignup
+
+if TYPE_CHECKING:
+    from app.models.koth_event import DBKothEvent
+
 
 
 class KothEvent(APISchema):
@@ -16,7 +20,7 @@ class KothEvent(APISchema):
     signups: Annotated[list[KothSignup], NoneToList] = []
     matches: Annotated[list[KothMatch], NoneToList] = []
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(
             include={
                 "id",
@@ -30,7 +34,7 @@ class KothEvent(APISchema):
         )
 
     @classmethod
-    def from_db_event(cls, event):
+    def from_db_event(cls, event: "DBKothEvent | None") -> Self | None:
         if not event:
             return None
 

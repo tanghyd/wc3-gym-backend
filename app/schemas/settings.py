@@ -1,6 +1,10 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, NumToStr
+
+if TYPE_CHECKING:
+    from app.models.settings import DBSettings
+
 
 
 class Settings(APISchema):
@@ -11,7 +15,7 @@ class Settings(APISchema):
     description: str | None = None
 
     @classmethod
-    def from_dbsettings(cls, db_settings):
+    def from_dbsettings(cls, db_settings: "DBSettings | None") -> Self | None:
         """Create DTO from database model"""
         if not db_settings:
             return None
@@ -22,7 +26,7 @@ class Settings(APISchema):
             description=db_settings.description,
         )
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         """Convert DTO to dictionary for database operations"""
         return self.model_dump(
             include={"key", "value", "description"}, exclude_none=True

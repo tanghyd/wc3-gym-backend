@@ -1,7 +1,11 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, NoneToList
 from app.schemas.koth_match_participant import KothMatchParticipant
+
+if TYPE_CHECKING:
+    from app.models.koth_match import DBKothMatch
+
 
 
 class KothMatch(APISchema):
@@ -13,7 +17,7 @@ class KothMatch(APISchema):
     winner_team_number: int | None = None
     participants: Annotated[list[KothMatchParticipant], NoneToList] = []
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(
             include={
                 "id",
@@ -26,7 +30,7 @@ class KothMatch(APISchema):
         )
 
     @classmethod
-    def from_db_match(cls, match):
+    def from_db_match(cls, match: "DBKothMatch | None") -> Self | None:
         if not match:
             return None
 

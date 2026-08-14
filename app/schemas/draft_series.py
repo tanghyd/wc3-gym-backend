@@ -1,6 +1,12 @@
+from typing import TYPE_CHECKING, Any, Self
+
 from app.schemas.base import APISchema, IsoDateTime
 from app.schemas.match import Match
 from app.schemas.user import User
+
+if TYPE_CHECKING:
+    from app.models.draft_series import DBDraftSeries
+
 
 DB_FIELDS = {
     "match_id",
@@ -31,11 +37,11 @@ class DraftSeries(APISchema):
     is_fantasy_match: bool | None = False
     created_at: IsoDateTime | None = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_db_draft_series(cls, draft_series):
+    def from_db_draft_series(cls, draft_series: "DBDraftSeries | None") -> Self | None:
         if not draft_series:
             return None
 
@@ -63,7 +69,7 @@ class DraftSeries(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

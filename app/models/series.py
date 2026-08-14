@@ -1,7 +1,8 @@
+from collections.abc import Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Self
 
-from sqlalchemy import ForeignKey, String, and_, select
+from sqlalchemy import ColumnExpressionArgument, ForeignKey, String, and_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.models.base import DBModel
@@ -30,13 +31,19 @@ class DBSeries(DBModel):
     player1: Mapped["DBUser"] = relationship(foreign_keys=[player1_id])
     player2: Mapped["DBUser"] = relationship(foreign_keys=[player2_id])
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }
 
     @classmethod
-    def searchForSeasonAndPlayday(cls, session: Session, season_id, playday, filters):
+    def searchForSeasonAndPlayday(
+        cls,
+        session: Session,
+        season_id: int,
+        playday: int,
+        filters: ColumnExpressionArgument[bool] | None,
+    ) -> Sequence[Self]:
         from sqlalchemy.orm import joinedload
 
         from app.models.relationships import DBUserTeamSeason
@@ -65,7 +72,12 @@ class DBSeries(DBModel):
         return session.scalars(stmt).unique().all()
 
     @classmethod
-    def searchForSeason(cls, session: Session, season_id, filters):
+    def searchForSeason(
+        cls,
+        session: Session,
+        season_id: int,
+        filters: ColumnExpressionArgument[bool] | None,
+    ) -> Sequence[Self]:
         from sqlalchemy.orm import joinedload
 
         from app.models.relationships import DBUserTeamSeason

@@ -1,5 +1,11 @@
+from typing import TYPE_CHECKING, Any, Self
+
 from app.schemas.base import APISchema
 from app.schemas.user import User
+
+if TYPE_CHECKING:
+    from app.models.player_career_stats import DBPlayerCareerStats
+
 
 DB_FIELDS = {
     "user_id",
@@ -48,18 +54,18 @@ class PlayerCareerStats(APISchema):
     seasons_played: int | None = None
     avg_series_per_season: float | None = None
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
         for key in _FLOAT_FIELDS:
             result[key] = result[key] if result[key] else 0.0
         return result
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         """Convert DTO to dictionary for DB operations (excludes id and relationships)"""
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_db(cls, stats):
+    def from_db(cls, stats: "DBPlayerCareerStats | None") -> Self | None:
         if not stats:
             return None
 
@@ -88,7 +94,7 @@ class PlayerCareerStats(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

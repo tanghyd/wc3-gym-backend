@@ -1,10 +1,14 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.models.enums import Race
 from app.schemas.base import APISchema, NoneToList, NumToStr
 from app.schemas.season import Season
 from app.schemas.user_team_season_stats import UserTeamSeasonStats
 from app.schemas.w3c_stats import W3CStats
+
+if TYPE_CHECKING:
+    from app.models.user import DBUser
+
 
 DB_FIELDS = {
     "id",
@@ -35,11 +39,11 @@ class User(APISchema):
     fantasy_tier: int | None = None
     signup_seasons: Annotated[list[Season], NoneToList] = []
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbuser(cls, user):
+    def from_dbuser(cls, user: "DBUser | None") -> Self | None:
         if not user:
             return None
 
@@ -67,7 +71,7 @@ class User(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

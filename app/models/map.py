@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,7 +19,7 @@ class DBMap(DBModel):
         back_populates="map", cascade="all, delete"
     )
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.player_career_stats import DBPlayerCareerStats
     from app.models.relationships import DBFantasyTeamPlayer, DBUserSeasonSignup
     from app.models.w3c_stats import DBW3CStats
+    from app.schemas.user_team_season_stats import UserTeamSeasonStats
 
 
 class DBUser(DBModel):
@@ -42,7 +43,9 @@ class DBUser(DBModel):
     )
 
     @classmethod
-    def updateUserTeamSeasonStats(cls, session: Session, season_stats):
+    def updateUserTeamSeasonStats(
+        cls, session: Session, season_stats: "UserTeamSeasonStats"
+    ) -> DBUserTeamSeason:
         from app.models.season import DBSeason
         from app.models.team import DBTeam
 

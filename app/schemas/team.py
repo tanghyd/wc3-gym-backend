@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from pydantic import BeforeValidator
 
@@ -6,8 +6,12 @@ from app.schemas.base import APISchema, NoneToList, NumToStr
 from app.schemas.season_info import SeasonInfo
 from app.schemas.user import User
 
+if TYPE_CHECKING:
+    from app.models.team import DBTeam
 
-def _season_lists(value: Any) -> Any:
+
+
+def _season_lists(value: Any) -> Any:  # noqa: ANN401  # a validator sees raw input
     """Per-season lists: drop empty seasons and None entries (old to_dict behavior)."""
     if not value:
         return {}
@@ -31,7 +35,7 @@ class TeamReduced(APISchema):
     discord_role: Annotated[str | None, NumToStr] = None
 
     @classmethod
-    def from_dbteam(cls, team):
+    def from_dbteam(cls, team: "DBTeam | None") -> Self | None:
         return cls(
             id=team.id,
             name=team.name,
@@ -45,11 +49,11 @@ class Team(TeamReduced):
     coaches_by_season: Annotated[dict[int, list[User]], SeasonLists] = {}
     seasons_info: Annotated[list[SeasonInfo], NoneToList] = []
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include={"name", "long_name", "discord_role"})
 
     @classmethod
-    def from_dbteam(cls, team):
+    def from_dbteam(cls, team: "DBTeam | None") -> Self | None:
         if not team:
             return None
 
@@ -115,7 +119,7 @@ class Team(TeamReduced):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

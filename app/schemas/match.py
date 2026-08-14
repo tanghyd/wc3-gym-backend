@@ -1,9 +1,12 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, NumToStr
 from app.schemas.map import Map
 from app.schemas.season import Season
 from app.schemas.team import TeamReduced
+
+if TYPE_CHECKING:
+    from app.models.match import DBMatch
 
 DB_FIELDS = {
     "team1_id",
@@ -33,11 +36,11 @@ class Match(APISchema):
     team1_score: int | None = None
     team2_score: int | None = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbmatch(cls, match):
+    def from_dbmatch(cls, match: "DBMatch") -> Self:
         return cls(
             id=match.id,
             team1_id=match.team1_id,
@@ -55,7 +58,7 @@ class Match(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

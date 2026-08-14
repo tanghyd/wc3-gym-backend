@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,7 +28,7 @@ class DBMatch(DBModel):
     season: Mapped["DBSeason"] = relationship(foreign_keys=[season_id])
     fixed_map: Mapped["DBMap | None"] = relationship(foreign_keys=[fixed_map_id])
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }

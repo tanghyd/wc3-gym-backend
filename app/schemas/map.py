@@ -1,6 +1,9 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, NumToStr
+
+if TYPE_CHECKING:
+    from app.models.map import DBMap
 
 
 class Map(APISchema):
@@ -12,7 +15,7 @@ class Map(APISchema):
     image: Annotated[str | None, NumToStr] = None
 
     @classmethod
-    def from_dbmap(cls, map):
+    def from_dbmap(cls, map: "DBMap") -> Self:
         return cls(
             id=map.id,
             name=map.name,
@@ -21,7 +24,7 @@ class Map(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

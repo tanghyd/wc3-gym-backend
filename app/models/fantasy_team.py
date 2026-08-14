@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Self
 
 from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
@@ -37,13 +37,13 @@ class DBFantasyTeam(DBModel):
         back_populates="fantasy_team", cascade="all, delete"
     )
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }
 
     @classmethod
-    def addPlayers(cls, session: Session, obj_id, user_ids):
+    def addPlayers(cls, session: Session, obj_id: int, user_ids: list[int]) -> Self:
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Team not found by id: {obj_id}")
@@ -65,7 +65,7 @@ class DBFantasyTeam(DBModel):
         return team
 
     @classmethod
-    def removePlayers(cls, session: Session, obj_id, user_ids):
+    def removePlayers(cls, session: Session, obj_id: int, user_ids: list[int]) -> Self:
         team = session.get(cls, obj_id)
         if not team:
             raise Exception(f"Fantasy Team not found by id: {obj_id}")

@@ -1,9 +1,13 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, EmptyStrToNone
 from app.schemas.season import Season
 from app.schemas.series import Series
 from app.schemas.user import User
+
+if TYPE_CHECKING:
+    from app.models.fantasy_bet import DBFantasyBet
+
 
 DB_FIELDS = {
     "series_id",
@@ -30,11 +34,11 @@ class FantasyBet(APISchema):
     bet_points: Annotated[int | None, EmptyStrToNone] = None
     bet_result: int | None = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbfantasybet(cls, fbet):
+    def from_dbfantasybet(cls, fbet: "DBFantasyBet | None") -> Self | None:
         if not fbet:
             return None
 
@@ -53,7 +57,7 @@ class FantasyBet(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

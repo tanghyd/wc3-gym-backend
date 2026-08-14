@@ -1,9 +1,10 @@
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, NoneToList
 from app.schemas.season import Season
 
 if TYPE_CHECKING:
+    from app.models.relationships import DBUserTeamSeason
     from app.schemas.team import TeamReduced
 
 
@@ -19,7 +20,7 @@ class UserTeamSeasonStats(APISchema):
     matchup_history: Annotated[list[Any], NoneToList] = []
 
     @classmethod
-    def from_db_user_team_season(cls, uts):
+    def from_db_user_team_season(cls, uts: "DBUserTeamSeason | None") -> Self | None:
         if not uts:
             return None
 
@@ -38,7 +39,7 @@ class UserTeamSeasonStats(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         from app.schemas.season import Season
         from app.schemas.team import Team
 

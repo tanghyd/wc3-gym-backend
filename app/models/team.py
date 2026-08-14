@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Self
 
 from sqlalchemy import LargeBinary, String
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
@@ -25,13 +25,15 @@ class DBTeam(DBModel):
         back_populates="team", cascade="all, delete"
     )
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }
 
     @classmethod
-    def addPlayers(cls, session: Session, obj_id, season_id, user_ids):
+    def addPlayers(
+        cls, session: Session, obj_id: int, season_id: int, user_ids: list[int]
+    ) -> Self:
         from app.models.season import DBSeason
 
         team = session.get(cls, obj_id)
@@ -58,7 +60,9 @@ class DBTeam(DBModel):
         return team
 
     @classmethod
-    def removePlayers(cls, session: Session, obj_id, season_id, user_ids):
+    def removePlayers(
+        cls, session: Session, obj_id: int, season_id: int, user_ids: list[int]
+    ) -> Self:
         from app.models.season import DBSeason
 
         team = session.get(cls, obj_id)
@@ -82,7 +86,7 @@ class DBTeam(DBModel):
         return team
 
     @classmethod
-    def update_icon(cls, session: Session, obj_id, file):
+    def update_icon(cls, session: Session, obj_id: int, file: bytes) -> Self | None:
         obj = session.get(cls, obj_id)
         if obj:
             setattr(obj, DBTeam.icon.name, file)
@@ -90,7 +94,9 @@ class DBTeam(DBModel):
         return obj
 
     @classmethod
-    def setCoaches(cls, session: Session, team_id, season_id, user_ids):
+    def setCoaches(
+        cls, session: Session, team_id: int, season_id: int, user_ids: list[int]
+    ) -> Self:
         """Set coaches for a team in a season (up to 3)."""
         from app.models.relationships import DBTeamSeason
         from app.models.season import DBSeason

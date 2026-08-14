@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import TIMESTAMP, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -29,7 +29,7 @@ class DBDraftSeries(DBModel):
     player1: Mapped["DBUser"] = relationship(foreign_keys=[player1_id])
     player2: Mapped["DBUser"] = relationship(foreign_keys=[player2_id])
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }

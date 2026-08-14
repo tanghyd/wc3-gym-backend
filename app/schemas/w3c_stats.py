@@ -1,7 +1,10 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.models.enums import Race
 from app.schemas.base import APISchema, RoundToInt
+
+if TYPE_CHECKING:
+    from app.models.w3c_stats import DBW3CStats
 
 DB_FIELDS = {
     "wc3_season",
@@ -32,11 +35,11 @@ class W3CStats(APISchema):
     league: Annotated[int | None, RoundToInt] = None
     user_id: int | None = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbw3cstats(cls, stats):
+    def from_dbw3cstats(cls, stats: "DBW3CStats") -> Self:
         return cls(
             id=stats.id,
             wc3_season=stats.wc3_season,
@@ -51,7 +54,7 @@ class W3CStats(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

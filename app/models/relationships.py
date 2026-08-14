@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from sqlalchemy import JSON, ForeignKey, select
 from sqlalchemy.orm import Mapped, Session, joinedload, mapped_column, relationship
@@ -61,7 +61,9 @@ class DBTeamSeason(DBModel):
     coach_3: Mapped["DBUser | None"] = relationship(foreign_keys=[coach_3_id])
 
     @classmethod
-    def updateSeasonInfo(cls, session: Session, obj_id, team_id, **kwargs):
+    def updateSeasonInfo(
+        cls, session: Session, obj_id: int, team_id: int, **kwargs: object
+    ) -> Self | None:
         # Eager load related entities to prevent N+1 queries
         obj = session.scalars(
             select(cls)

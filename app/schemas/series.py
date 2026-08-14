@@ -1,8 +1,12 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, IsoDateTime, NumToStr
 from app.schemas.match import Match
 from app.schemas.user import User
+
+if TYPE_CHECKING:
+    from app.models.series import DBSeries
+
 
 DB_FIELDS = {
     "match_id",
@@ -36,11 +40,11 @@ class Series(APISchema):
     host_player_id: int | None = None
     is_fantasy_match: bool | None = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbseries(cls, series):
+    def from_dbseries(cls, series: "DBSeries | None") -> Self | None:
         if not series:
             return None
 
@@ -63,7 +67,7 @@ class Series(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

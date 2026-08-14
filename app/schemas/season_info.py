@@ -1,5 +1,11 @@
+from typing import TYPE_CHECKING, Any, Self
+
 from app.schemas.base import APISchema
 from app.schemas.season import Season
+
+if TYPE_CHECKING:
+    from app.models.relationships import DBTeamSeason
+
 
 
 class SeasonInfo(APISchema):
@@ -9,13 +15,13 @@ class SeasonInfo(APISchema):
     points_against: int | None = None
     season: Season | None = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(
             include={"season_id", "final_score", "points_available", "points_against"}
         )
 
     @classmethod
-    def from_dbseasoninfo(cls, season_info):
+    def from_dbseasoninfo(cls, season_info: "DBTeamSeason | None") -> Self | None:
         if not season_info:
             return None
 
@@ -30,7 +36,7 @@ class SeasonInfo(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         from app.models.season import DBSeason
 
         return {

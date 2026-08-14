@@ -1,5 +1,5 @@
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Self
 
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
@@ -37,13 +37,13 @@ class DBSeason(DBModel):
     )
     discordRole: Mapped[str | None] = mapped_column(String(50))
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             column.name: getattr(self, column.name) for column in self.__table__.columns
         }
 
     @classmethod
-    def addTeams(cls, session: Session, obj_id, team_ids):
+    def addTeams(cls, session: Session, obj_id: int, team_ids: list[int]) -> Self:
         season = session.get(cls, obj_id)
         if not season:
             raise Exception(f"Season not found by id: {obj_id}")
@@ -62,7 +62,7 @@ class DBSeason(DBModel):
         return season
 
     @classmethod
-    def removeTeams(cls, session: Session, obj_id, team_ids):
+    def removeTeams(cls, session: Session, obj_id: int, team_ids: list[int]) -> Self:
         season = session.get(cls, obj_id)
         if not season:
             raise Exception(f"Season not found by id: {obj_id}")
@@ -82,7 +82,7 @@ class DBSeason(DBModel):
         return season
 
     @classmethod
-    def addMaps(cls, session: Session, obj_id, map_ids):
+    def addMaps(cls, session: Session, obj_id: int, map_ids: list[int]) -> Self:
         season = session.get(cls, obj_id)
         if not season:
             raise Exception(f"Season not found by id: {obj_id}")
@@ -101,7 +101,7 @@ class DBSeason(DBModel):
         return season
 
     @classmethod
-    def removeMaps(cls, session: Session, obj_id, map_ids):
+    def removeMaps(cls, session: Session, obj_id: int, map_ids: list[int]) -> Self:
         season = session.get(cls, obj_id)
         if not season:
             raise Exception(f"Season not found by id: {obj_id}")
@@ -122,7 +122,7 @@ class DBSeason(DBModel):
         return season
 
     @classmethod
-    def addUserSignup(cls, session: Session, obj_id, user_ids):
+    def addUserSignup(cls, session: Session, obj_id: int, user_ids: list[int]) -> Self:
         season = session.get(cls, obj_id)
         if not season:
             raise Exception(f"Season not found by id: {obj_id}")
@@ -143,7 +143,9 @@ class DBSeason(DBModel):
         return season
 
     @classmethod
-    def removeUserSignup(cls, session: Session, obj_id, user_ids):
+    def removeUserSignup(
+        cls, session: Session, obj_id: int, user_ids: list[int]
+    ) -> Self:
         season = session.get(cls, obj_id)
         if not season:
             raise Exception(f"Season not found by id: {obj_id}")

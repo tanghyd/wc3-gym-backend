@@ -135,7 +135,7 @@ class APISchema(BaseModel):
     # values must go through the same validators as constructor input.
     model_config = ConfigDict(extra="ignore", validate_assignment=True)
 
-    def __init__(self, data: dict | None = _UNSET, **kwargs):
+    def __init__(self, data: dict[str, Any] | None = _UNSET, **kwargs: object) -> None:
         # The old DTOs were constructed as `SomeDTO(request.json)`; keep that
         # calling convention alongside regular keyword construction. A None
         # payload raised in the old DTOs (`None.get(...)`) and must not
@@ -145,5 +145,5 @@ class APISchema(BaseModel):
         else:
             super().__init__(**data)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

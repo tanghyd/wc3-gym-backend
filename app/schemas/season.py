@@ -1,9 +1,10 @@
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from app.schemas.base import APISchema, EmptyToNone, IsoDate, LenientDate, NumToStr
 from app.schemas.map import Map
 
 if TYPE_CHECKING:
+    from app.models.season import DBSeason
     from app.schemas.user import User
 
 DB_FIELDS = {
@@ -30,11 +31,11 @@ class Season(APISchema):
     discordRole: Annotated[str | None, NumToStr] = None
     user_signup: Annotated[list["User"] | None, EmptyToNone] = None
 
-    def to_db_dict(self):
+    def to_db_dict(self) -> dict[str, Any]:
         return self.model_dump(include=DB_FIELDS)
 
     @classmethod
-    def from_dbseason(cls, season):
+    def from_dbseason(cls, season: "DBSeason | None") -> Self | None:
         if not season:
             return None
 
@@ -55,7 +56,7 @@ class Season(APISchema):
         )
 
     @classmethod
-    def from_dbseason_reduced(cls, season):
+    def from_dbseason_reduced(cls, season: "DBSeason | None") -> Self | None:
         if not season:
             return None
 
@@ -65,7 +66,7 @@ class Season(APISchema):
         )
 
     @staticmethod
-    def schema():
+    def schema() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
