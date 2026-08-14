@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends
 
@@ -12,7 +12,7 @@ router = APIRouter(tags=["draft-series"])
 
 
 @router.post("/draft-series", status_code=201, dependencies=[Depends(require_admin)])
-def add_draft_series(data: Annotated[dict, Body()], service: DraftSeriesServiceDep):
+def add_draft_series(data: Annotated[dict[str, Any], Body()], service: DraftSeriesServiceDep) -> dict[str, Any] | None:
     """Create a new draft series (visible in admin UI only)"""
     draft_series = service.create_draft_series(DraftSeries(data))
     return draft_series.to_dict() if draft_series else None
@@ -21,9 +21,9 @@ def add_draft_series(data: Annotated[dict, Body()], service: DraftSeriesServiceD
 @router.put("/draft-series/{draft_series_id}", dependencies=[Depends(require_admin)])
 def update_draft_series(
     draft_series_id: int,
-    data: Annotated[dict, Body()],
+    data: Annotated[dict[str, Any], Body()],
     service: DraftSeriesServiceDep,
-):
+) -> dict[str, Any] | None:
     """Update the data of an existing draft series"""
     draft_series = service.update_draft_series(draft_series_id, DraftSeries(data))
     return draft_series.to_dict() if draft_series else None
@@ -34,20 +34,20 @@ def update_draft_series(
     status_code=204,
     dependencies=[Depends(require_admin)],
 )
-def delete_draft_series(draft_series_id: int, service: DraftSeriesServiceDep):
+def delete_draft_series(draft_series_id: int, service: DraftSeriesServiceDep) -> None:
     """Delete a draft series by its ID."""
     service.delete_draft_series(draft_series_id)
 
 
 @router.get("/draft-series/{draft_series_id}")
-def get_draft_series(draft_series_id: int, service: DraftSeriesServiceDep):
+def get_draft_series(draft_series_id: int, service: DraftSeriesServiceDep) -> dict[str, Any] | None:
     """Retrieve a draft series by its ID."""
     draft_series = service.get_draft_series(draft_series_id)
     return draft_series.to_dict() if draft_series else None
 
 
 @router.get("/draft-series/match/{match_id}")
-def get_draft_series_by_match(match_id: int, service: DraftSeriesServiceDep):
+def get_draft_series_by_match(match_id: int, service: DraftSeriesServiceDep) -> list[dict[str, Any]]:
     """Return all draft series for a specific match"""
     return [
         draft_series.to_dict()
@@ -60,7 +60,7 @@ def get_draft_series_by_match(match_id: int, service: DraftSeriesServiceDep):
     status_code=204,
     dependencies=[Depends(require_admin)],
 )
-def delete_all_draft_series_for_match(match_id: int, service: DraftSeriesServiceDep):
+def delete_all_draft_series_for_match(match_id: int, service: DraftSeriesServiceDep) -> None:
     """Delete all draft series for a specific match"""
     service.delete_all_drafts_for_match(match_id)
 
@@ -74,7 +74,7 @@ def promote_draft_series(
     draft_series_id: int,
     service: DraftSeriesServiceDep,
     series_service: SeriesServiceDep,
-):
+) -> dict[str, Any] | None:
     """Convert a draft series to a real published series and delete the draft"""
     # Get the draft series
     draft_series = service.get_draft_series(draft_series_id)

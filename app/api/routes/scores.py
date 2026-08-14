@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -22,7 +23,7 @@ calculation_progress = {}
 
 
 @router.get("/season/{season_id}/calculate/status")
-def get_calc_status(season_id: int):
+def get_calc_status(season_id: int) -> dict[str, Any]:
     """Get the current calculation progress for a season"""
     progress = calculation_progress.get(season_id)
 
@@ -45,7 +46,7 @@ def calc_score(
     match_service: MatchServiceDep,
     series_service: SeriesServiceDep,
     score_service: ScoreServiceDep,
-):
+) -> JSONResponse:
     """Calculate the scores of a given season.
 
     Calculates series, match and team scores for the given season. This is a

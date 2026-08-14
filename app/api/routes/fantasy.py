@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
@@ -22,7 +22,7 @@ router = APIRouter(tags=["fantasy"])
 
 # Team endpoints
 @router.post("/fantasy/teams", status_code=201, dependencies=[Depends(require_admin)])
-def add_fantasy_team(data: Annotated[dict, Body()], service: FantasyTeamServiceDep):
+def add_fantasy_team(data: Annotated[dict[str, Any], Body()], service: FantasyTeamServiceDep) -> dict[str, Any] | None:
     """Create a new fantasy team with the provided name."""
     team = service.create_fantasy_team(FantasyTeam(data))
     return team.to_dict() if team else None
@@ -30,8 +30,8 @@ def add_fantasy_team(data: Annotated[dict, Body()], service: FantasyTeamServiceD
 
 @router.put("/fantasy/teams/{team_id}", dependencies=[Depends(require_admin)])
 def update_team(
-    team_id: int, data: Annotated[dict, Body()], service: FantasyTeamServiceDep
-):
+    team_id: int, data: Annotated[dict[str, Any], Body()], service: FantasyTeamServiceDep
+) -> dict[str, Any] | None:
     """Update an existing fantasy team."""
     team = service.update_fantasy_team(team_id, FantasyTeam(data))
     return team.to_dict() if team else None
@@ -40,13 +40,13 @@ def update_team(
 @router.delete(
     "/fantasy/teams/{team_id}", status_code=204, dependencies=[Depends(require_admin)]
 )
-def delete_team(team_id: int, service: FantasyTeamServiceDep):
+def delete_team(team_id: int, service: FantasyTeamServiceDep) -> None:
     """Delete a team by its ID."""
     service.delete_fantasy_team(team_id)
 
 
 @router.get("/fantasy/teams/{team_id}")
-def get_team(team_id: int, service: FantasyTeamServiceDep):
+def get_team(team_id: int, service: FantasyTeamServiceDep) -> dict[str, Any] | None:
     """Retrieve a team by its ID."""
     team = service.get_fantasy_team(team_id)
     return team.to_dict() if team else None
@@ -56,8 +56,8 @@ def get_team(team_id: int, service: FantasyTeamServiceDep):
     "/fantasy/teams/addPlayers/{team_id}", dependencies=[Depends(require_admin)]
 )
 def addPlayers(
-    team_id: int, data: Annotated[dict, Body()], service: FantasyTeamServiceDep
-):
+    team_id: int, data: Annotated[dict[str, Any], Body()], service: FantasyTeamServiceDep
+) -> dict[str, Any] | None:
     """Add players to a fantasy team for a season using their IDs."""
     team = service.addFantasyPlayers(team_id, data.get("player_ids"))
     return team.to_dict() if team else None
@@ -67,21 +67,21 @@ def addPlayers(
     "/fantasy/teams/removePlayers/{team_id}", dependencies=[Depends(require_admin)]
 )
 def removePlayers(
-    team_id: int, data: Annotated[dict, Body()], service: FantasyTeamServiceDep
-):
+    team_id: int, data: Annotated[dict[str, Any], Body()], service: FantasyTeamServiceDep
+) -> dict[str, Any] | None:
     """Removes players from a fantasy team for a season using their IDs."""
     team = service.removeFantasyPlayers(team_id, data.get("player_ids"))
     return team.to_dict() if team else None
 
 
 @router.get("/fantasy/teams")
-def get_all_teams(service: FantasyTeamServiceDep):
+def get_all_teams(service: FantasyTeamServiceDep) -> list[dict[str, Any]]:
     """Retrieve all fantasy teams."""
     return [team.to_dict() for team in service.getAll_fantasy_teams() or []]
 
 
 @router.post("/fantasy/teams/search")
-def search_teams(service: FantasyTeamServiceDep, query: str = ""):
+def search_teams(service: FantasyTeamServiceDep, query: str = "") -> list[dict[str, Any]]:
     """Search teams by criteria using a custom query format."""
     parsed = QueryUtil.parseQuery(query)
     if not parsed or not parsed.elementA:
@@ -90,8 +90,8 @@ def search_teams(service: FantasyTeamServiceDep, query: str = ""):
 
 
 # Bet endpoints
-@router.post("/fantasy/bets", status_code=201, dependencies=[Depends(require_admin)])
-def add_fantasy_bet(data: Annotated[dict, Body()], service: FantasyBetServiceDep):
+@router.post("/fantasy/bets", status_code=201, dependencies=[Depends(require_admin)], response_model=None)
+def add_fantasy_bet(data: Annotated[dict[str, Any], Body()], service: FantasyBetServiceDep) -> JSONResponse | dict[str, Any] | None:
     """Create a new fantasy bet with the provided name."""
     try:
         bet = service.create_fantasy_bet(FantasyBet(data))
@@ -101,10 +101,10 @@ def add_fantasy_bet(data: Annotated[dict, Body()], service: FantasyBetServiceDep
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
-@router.put("/fantasy/bets/{bet_id}", dependencies=[Depends(require_admin)])
+@router.put("/fantasy/bets/{bet_id}", dependencies=[Depends(require_admin)], response_model=None)
 def update_bet(
-    bet_id: int, data: Annotated[dict, Body()], service: FantasyBetServiceDep
-):
+    bet_id: int, data: Annotated[dict[str, Any], Body()], service: FantasyBetServiceDep
+) -> JSONResponse | dict[str, Any] | None:
     """Update an existing fantasy bet."""
     try:
         bet = service.update_fantasy_bet(bet_id, FantasyBet(data))
@@ -117,26 +117,26 @@ def update_bet(
 @router.delete(
     "/fantasy/bets/{bet_id}", status_code=204, dependencies=[Depends(require_admin)]
 )
-def delete_bet(bet_id: int, service: FantasyBetServiceDep):
+def delete_bet(bet_id: int, service: FantasyBetServiceDep) -> None:
     """Delete a bet by its ID."""
     service.delete_fantasy_bet(bet_id)
 
 
 @router.get("/fantasy/bets/{bet_id}")
-def get_bet(bet_id: int, service: FantasyBetServiceDep):
+def get_bet(bet_id: int, service: FantasyBetServiceDep) -> dict[str, Any] | None:
     """Retrieve a bet by its ID."""
     bet = service.get_fantasy_bet(bet_id)
     return bet.to_dict() if bet else None
 
 
 @router.get("/fantasy/bets")
-def get_all_bets(service: FantasyBetServiceDep):
+def get_all_bets(service: FantasyBetServiceDep) -> list[dict[str, Any]]:
     """Retrieve all fantasy bets."""
     return [bet.to_dict() for bet in service.getAll_fantasy_bets() or []]
 
 
 @router.post("/fantasy/bets/search")
-def search_bets(service: FantasyBetServiceDep, query: str = ""):
+def search_bets(service: FantasyBetServiceDep, query: str = "") -> list[dict[str, Any]]:
     """Search bets by criteria using a custom query format."""
     parsed = QueryUtil.parseQuery(query)
     if not parsed or not parsed.elementA:
@@ -144,13 +144,13 @@ def search_bets(service: FantasyBetServiceDep, query: str = ""):
     return [bet.to_dict() for bet in service.search_fantasy_bets(parsed) or []]
 
 
-@router.get("/fantasy/teams/{team_id}/season/{season_id}/breakdown")
+@router.get("/fantasy/teams/{team_id}/season/{season_id}/breakdown", response_model=None)
 def get_fantasy_team_breakdown(
     team_id: int,
     season_id: int,
     season_service: SeasonServiceDep,
     fantasy_score_service: FantasyScoreServiceDep,
-):
+) -> JSONResponse | dict[str, Any]:
     """Get detailed score breakdown for a fantasy team.
 
     Returns a detailed breakdown showing how each component of the fantasy
@@ -174,7 +174,7 @@ def calc_fantasy_score(
     season_id: int,
     season_service: SeasonServiceDep,
     fantasy_score_service: FantasyScoreServiceDep,
-):
+) -> None:
     """Calculate the fantasy scores of a given season."""
     season = season_service.get_season(season_id)
     fantasy_score_service.calculateTeamScores(season)
