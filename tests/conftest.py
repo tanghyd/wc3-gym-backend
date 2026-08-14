@@ -1,8 +1,9 @@
-"""Shared fixtures. This is the only test module that touches Flask.
+"""Shared fixtures. This is the only test module that touches Flask or
+FastAPI.
 
-Every test asserts on status codes and JSON bodies through the client
+Every test asserts on status codes and JSON bodies through a client
 fixture, or calls a service object directly. Nothing outside this file
-imports Flask, so a move to another web framework replaces the app and
+imports a web framework, so a move to another one replaces the app and
 client fixtures and keeps the suite.
 
 The application and the process are one-to-one: Session.configure and the
@@ -80,3 +81,57 @@ def auth_headers(client):
     assert resp.status_code == 200
     token = resp.get_json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def refresh_headers(client):
+    resp = client.post("/login", json={"token": "test-admin-token"})
+    assert resp.status_code == 200
+    token = resp.get_json()["refresh_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(scope="session")
+def asgi_client(app):
+    """The combined application, served the way production serves it:
+    FastAPI at the root, the session's Flask app mounted below."""
+    from fastapi.testclient import TestClient
+
+    from app.asgi import create_app as create_asgi_app
+
+    return TestClient(create_asgi_app(flask_app=app), raise_server_exceptions=False)
+
+
+@pytest.fixture(scope="session")
+def probe_client(app):
+    """A FastAPI app wearing the shipped exception handlers and the
+    require_admin dependency, with throwaway routes that exercise them.
+    Needed until the first real API module moves; then the machinery has
+    production routes to test through."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.asgi import register_exception_handlers
+    from app.dependencies import RequireAdmin
+    from app.exceptions import DBException, NotFoundException
+
+    probe = FastAPI()
+    register_exception_handlers(probe)
+
+    @probe.get("/guarded")
+    def guarded(identity: RequireAdmin):
+        return {"identity": identity}
+
+    @probe.get("/missing")
+    def missing():
+        raise NotFoundException("nothing here")
+
+    @probe.get("/db-broken")
+    def db_broken():
+        raise DBException("db says no")
+
+    @probe.get("/broken")
+    def broken():
+        raise RuntimeError("boom")
+
+    return TestClient(probe, raise_server_exceptions=False)

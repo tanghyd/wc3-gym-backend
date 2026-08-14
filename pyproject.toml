@@ -22,6 +22,9 @@ dependencies = [
     "gunicorn",
     "flask-caching",
     "pydantic>=2,<3",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.3",
+    "a2wsgi>=1.10.10",
 ]
 
 [build-system]
@@ -30,6 +33,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.10.0",
     "pytest",
     "ruff>=0.16.3",
 ]
