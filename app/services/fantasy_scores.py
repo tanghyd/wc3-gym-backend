@@ -8,6 +8,7 @@ from app.services.teams import TeamService
 from app.utils.query_util import QueryUtil
 
 if TYPE_CHECKING:
+    from app.models.fantasy_team import FantasyTeamPublic
     from app.models.season import SeasonPublic
 
 # A player's race arrives as the enum, as its plain value, or not at all,
@@ -168,8 +169,12 @@ class FantasyScoreService:
         return race_points
 
     def _calculate_fantasy_team_scores(
-        self, fantasy_team, season, race_points, include_breakdown=False
-    ):
+        self,
+        fantasy_team: "FantasyTeamPublic",
+        season: "SeasonPublic",
+        race_points: RacePoints,
+        include_breakdown: bool = False,
+    ) -> dict[str, Any]:
         """
         Calculate all score components for a single fantasy team.
 
