@@ -1,11 +1,15 @@
 import logging
+from collections.abc import Iterable
+from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session as OrmSession
 
 from app.exceptions import DBException
 from app.models.player_career_stats import DBPlayerCareerStats
 from app.models.user import DBUser
 from app.schemas.player_career_stats import PlayerCareerStats
+from app.schemas.series import Series
 from app.services.base import BaseService
 from app.services.series import SeriesService
 
@@ -22,22 +26,22 @@ GNL_RATING_FLAT_MULTIPLIER = 100.0  # Creates separation between scores
 
 
 class PlayerCareerStatsService(BaseService):
-    def __init__(self, series_service: SeriesService):
+    def __init__(self, series_service: SeriesService) -> None:
         self.series_service = series_service
 
-    def get(self, stat_id: int):
+    def get(self, stat_id: int) -> PlayerCareerStats | None:
         """Get career stats by stats record ID (implements abstract method)"""
         with self.get_session() as session:
             stat = session.get(DBPlayerCareerStats, stat_id)
             return PlayerCareerStats.from_db(stat) if stat else None
 
-    def add(self, entity):
+    def add(self, entity: dict[str, Any]) -> PlayerCareerStats | None:
         """Add new career stats record (implements abstract method)"""
         with self.get_session() as session:
             new_stat = DBPlayerCareerStats.add(session, entity)
             return PlayerCareerStats.from_db(new_stat)
 
-    def update(self, stat_dto):
+    def update(self, stat_dto: PlayerCareerStats) -> PlayerCareerStats | None:
         """Update career stats record (implements abstract method)"""
         with self.get_session() as session:
             updated_stat = DBPlayerCareerStats.update(
@@ -45,7 +49,7 @@ class PlayerCareerStatsService(BaseService):
             )
             return PlayerCareerStats.from_db(updated_stat)
 
-    def delete(self, stat_id: int):
+    def delete(self, stat_id: int) -> bool:
         """Delete career stats by stats ID (implements abstract method)"""
         with self.get_session() as session:
             stats = session.get(DBPlayerCareerStats, stat_id)
@@ -54,7 +58,7 @@ class PlayerCareerStatsService(BaseService):
                 return True
             return False
 
-    def get_all(self):
+    def get_all(self) -> list[PlayerCareerStats]:
         """Get all player career stats ordered by rating"""
         with self.get_session() as session:
             stats = (
@@ -68,7 +72,7 @@ class PlayerCareerStatsService(BaseService):
             )
             return [PlayerCareerStats.from_db(stat) for stat in stats]
 
-    def get_by_user_id(self, user_id: int):
+    def get_by_user_id(self, user_id: int) -> PlayerCareerStats | None:
         """Get career stats for a specific user"""
         with self.get_session() as session:
             stat = session.scalars(
@@ -78,7 +82,7 @@ class PlayerCareerStatsService(BaseService):
             ).first()
             return PlayerCareerStats.from_db(stat) if stat else None
 
-    def get_by_player_name(self, player_name: str):
+    def get_by_player_name(self, player_name: str) -> PlayerCareerStats | None:
         """Get career stats by player name (for unmapped historical records)"""
         with self.get_session() as session:
             stat = session.scalars(
@@ -88,7 +92,7 @@ class PlayerCareerStatsService(BaseService):
             ).first()
             return PlayerCareerStats.from_db(stat) if stat else None
 
-    def get_or_create(self, user_id: int):
+    def get_or_create(self, user_id: int) -> PlayerCareerStats | None:
         """Get existing stats or create new record for user"""
         with self.get_session() as session:
             stats = session.scalars(
@@ -120,7 +124,7 @@ class PlayerCareerStatsService(BaseService):
         series_winrate: float,
         games_winrate: float,
         avg_series: float,
-    ):
+    ) -> None:
         """Update historical baseline columns (from CSV import).
 
         Resolves the user by player name in the same transaction, so one
@@ -189,7 +193,7 @@ class PlayerCareerStatsService(BaseService):
         games_winrate: float,
         seasons_played: int,
         avg_series: float,
-    ):
+    ) -> None:
         """Update combined total columns (from recalculation)"""
         with self.get_session() as session:
             stats = session.scalars(
@@ -209,7 +213,7 @@ class PlayerCareerStatsService(BaseService):
                 stats.seasons_played = seasons_played
                 stats.avg_series_per_season = round(avg_series, 2)
 
-    def batch_update_stats(self, updates):
+    def batch_update_stats(self, updates: list[dict[str, Any]]) -> dict[str, Any]:
         """Batch update stats for multiple users.
 
         Each item runs in its own transaction. An error in one item does
@@ -223,7 +227,7 @@ class PlayerCareerStatsService(BaseService):
             Dict with 'updated' count and 'errors' list
         """
         updated = 0
-        errors = []
+        errors: list[str] = []
 
         for update_data in updates:
             user_id = update_data.get("user_id")
@@ -240,7 +244,9 @@ class PlayerCareerStatsService(BaseService):
 
         return {"updated": updated, "errors": errors}
 
-    def _apply_stats_update(self, session, update_data):
+    def _apply_stats_update(
+        self, session: OrmSession, update_data: dict[str, Any]
+    ) -> None:
         """Create, link, or merge the stats record for one update item."""
         user_id = update_data["user_id"]
         player_name = update_data["player_name"]
@@ -320,19 +326,21 @@ class PlayerCareerStatsService(BaseService):
         stats_record.seasons_played = update_data["seasons_played"]
         stats_record.avg_series_per_season = update_data["avg_series_per_season"]
 
-    def get_all_career_stats(self):
+    def get_all_career_stats(self) -> list[PlayerCareerStats]:
         """Get all player career stats ordered by rating"""
         return self.get_all()
 
-    def get_career_stats_by_user(self, user_id: int):
+    def get_career_stats_by_user(self, user_id: int) -> PlayerCareerStats | None:
         """Get career stats for a specific user"""
         return self.get_by_user_id(user_id)
 
-    def import_historical_stats(self, csv_reader):
+    def import_historical_stats(
+        self, csv_reader: Iterable[dict[str, str]]
+    ) -> dict[str, Any]:
         """Import historical stats from CSV reader"""
         imported = 0
         skipped = 0
-        errors = []
+        errors: list[str] = []
 
         for row in csv_reader:
             try:
@@ -391,20 +399,20 @@ class PlayerCareerStatsService(BaseService):
 
         return {"imported": imported, "skipped": skipped, "errors": errors}
 
-    def _parse_percentage(self, value):
+    def _parse_percentage(self, value: str | None) -> float:
         """Parse percentage string like '75 %' to decimal like 75.00"""
         if not value or value == "0 %":
             return 0.0
         return float(value.replace(" %", "").replace("%", ""))
 
-    def _parse_avg_series(self, value):
+    def _parse_avg_series(self, value: str | None) -> float:
         """Parse avg series string like '4,0' to decimal 4.0"""
         if not value:
             return 0.0
         clean = value.strip('"').replace(",", ".")
         return float(clean)
 
-    def recalculate_all_stats(self):
+    def recalculate_all_stats(self) -> dict[str, Any]:
         """
         Recalculate career stats for all players by combining:
         1. Historical baseline (if exists)
@@ -675,7 +683,9 @@ class PlayerCareerStatsService(BaseService):
         logger.info(f"Recalculated stats for {result['updated']} players")
         return result
 
-    def _calculate_player_stats_from_series(self, user_id, series_list):
+    def _calculate_player_stats_from_series(
+        self, user_id: int, series_list: list[Series]
+    ) -> dict[str, Any]:
         """Calculate stats for a player from their series records (Series objects)"""
         series_won = 0
         series_lost = 0
@@ -712,8 +722,12 @@ class PlayerCareerStatsService(BaseService):
         }
 
     def _calculate_gnl_rating(
-        self, user_id, series_list, historical_rating=0, all_system_seasons=None
-    ):
+        self,
+        user_id: int,
+        series_list: list[Series],
+        historical_rating: float = 0,
+        all_system_seasons: list[int] | None = None,
+    ) -> int:
         """Calculate GNL Rating from series records.
 
         GNL Rating rewards participation and performance with decay for older seasons.
@@ -812,7 +826,9 @@ class PlayerCareerStatsService(BaseService):
 
         return int(gnl_rating)
 
-    def _calculate_player_stats_from_series_data(self, user_id, series_data):
+    def _calculate_player_stats_from_series_data(
+        self, user_id: int, series_data: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Calculate stats from a list of series (dict data from DB)."""
         stats = {
             "series_won": 0,
@@ -856,7 +872,9 @@ class PlayerCareerStatsService(BaseService):
 
         return stats
 
-    def update_career_stats(self, stat_id: int, stat_dto):
+    def update_career_stats(
+        self, stat_id: int, stat_dto: PlayerCareerStats
+    ) -> PlayerCareerStats | None:
         """Update career stats (historical values and user link)"""
         # Use DBModel.update pattern with DTO's to_db_dict()
         with self.get_session() as session:
@@ -868,7 +886,7 @@ class PlayerCareerStatsService(BaseService):
 
             return PlayerCareerStats.from_db(updated_stat)
 
-    def delete_career_stats(self, stat_id: int):
+    def delete_career_stats(self, stat_id: int) -> bool:
         """Delete career stats record"""
         stat = self.get(stat_id)
         if not stat:
