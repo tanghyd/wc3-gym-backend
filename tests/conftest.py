@@ -1,22 +1,21 @@
-"""Shared fixtures. This is the only test module that touches Flask or
-FastAPI.
+"""Shared fixtures. This is the only test module that touches FastAPI.
 
-Every test asserts on status codes and JSON bodies through a client
+Every test asserts on status codes and JSON bodies through the client
 fixture, or calls a service object directly. Nothing outside this file
 imports a web framework, so a move to another one replaces the app and
 client fixtures and keeps the suite.
 
 The application and the process are one-to-one: Session.configure and the
-blueprint attributes are process-global, so the app fixture is
-session-scoped. Tests share one database file and the clean_db fixture
-empties it between tests.
+service singletons in app/api/deps.py are process-global, so the app
+fixture is session-scoped. Tests share one database file and the clean_db
+fixture empties it between tests.
 """
 
 import os
 
 import pytest
 
-# create_app reads these. Set before the src import so the values are the
+# create_app reads these. Set before the app import so the values are the
 # same with and without a .env file (load_dotenv does not override).
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-of-at-least-32-bytes"
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
@@ -39,7 +38,12 @@ def app(tmp_path_factory):
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    from fastapi.testclient import TestClient
+
+    # follow_redirects off, like the Flask test client, so a 302 is
+    # asserted as a 302. raise_server_exceptions off so a route error is
+    # asserted as the 500 body a real client sees.
+    return TestClient(app, follow_redirects=False, raise_server_exceptions=False)
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +51,7 @@ def clean_db(app):
     """Empty every table after each test. Children first, so no foreign
     key constraint fires."""
     yield
-    from app.database.engine import Session
+    from app.core.db import Session
     from app.models.base import Base
 
     with Session() as session:
@@ -59,7 +63,7 @@ def clean_db(app):
 @pytest.fixture
 def seeded(app):
     """A small consistent league. Returns the ids the tests refer to."""
-    from app.database.engine import Session
+    from app.core.db import Session
     from tests.seed import seed_league
 
     with Session() as session:
@@ -69,17 +73,10 @@ def seeded(app):
 
 
 @pytest.fixture
-def route_count(app):
-    """Number of registered routes, excluding the static route. Lives here
-    so the url_map stays out of the test files."""
-    return len([r for r in app.url_map.iter_rules() if r.endpoint != "static"])
-
-
-@pytest.fixture
 def auth_headers(client):
     resp = client.post("/login", json={"token": "test-admin-token"})
     assert resp.status_code == 200
-    token = resp.get_json()["access_token"]
+    token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -87,51 +84,5 @@ def auth_headers(client):
 def refresh_headers(client):
     resp = client.post("/login", json={"token": "test-admin-token"})
     assert resp.status_code == 200
-    token = resp.get_json()["refresh_token"]
+    token = resp.json()["refresh_token"]
     return {"Authorization": f"Bearer {token}"}
-
-
-@pytest.fixture(scope="session")
-def asgi_client(app):
-    """The combined application, served the way production serves it:
-    FastAPI at the root, the session's Flask app mounted below."""
-    from fastapi.testclient import TestClient
-
-    from app.asgi import create_app as create_asgi_app
-
-    return TestClient(create_asgi_app(flask_app=app), raise_server_exceptions=False)
-
-
-@pytest.fixture(scope="session")
-def probe_client(app):
-    """A FastAPI app wearing the shipped exception handlers and the
-    require_admin dependency, with throwaway routes that exercise them.
-    Needed until the first real API module moves; then the machinery has
-    production routes to test through."""
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from app.asgi import register_exception_handlers
-    from app.dependencies import RequireAdmin
-    from app.exceptions import DBException, NotFoundException
-
-    probe = FastAPI()
-    register_exception_handlers(probe)
-
-    @probe.get("/guarded")
-    def guarded(identity: RequireAdmin):
-        return {"identity": identity}
-
-    @probe.get("/missing")
-    def missing():
-        raise NotFoundException("nothing here")
-
-    @probe.get("/db-broken")
-    def db_broken():
-        raise DBException("db says no")
-
-    @probe.get("/broken")
-    def broken():
-        raise RuntimeError("boom")
-
-    return TestClient(probe, raise_server_exceptions=False)

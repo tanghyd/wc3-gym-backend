@@ -31,4 +31,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # During debugging, this entry point will be overridden. uvicorn has no
 # worker timeout, so the long import/export requests need no --timeout.
-CMD ["uvicorn", "--factory", "app.asgi:create_app", "--host", "0.0.0.0", "--port", "5002"]
+CMD ["uvicorn", "--factory", "app.main:create_app", "--host", "0.0.0.0", "--port", "5002"]
