@@ -61,24 +61,22 @@ VS Code will prompt to select `.venv` as the workspace interpreter - click "Yes"
 
 Dependencies live in `pyproject.toml`: runtime packages under `[project] dependencies`, development-only packages under `[dependency-groups] dev`. After editing either list, run `uv sync` again and commit the updated `uv.lock`. The Docker image installs from the same `uv.lock`, so one edit covers both local development and deployment.
 
-### 3. Configure tasks.json
+### 3. Know the environment variables
 
-The project uses VS Code tasks for Docker builds and runs. The configuration is in `.vscode/tasks.json`.
+The backend reads its configuration from the environment. `just up` and the debug configuration both pass development-only values, so nothing here needs setting by hand to run the project locally. Read this table before deploying, and when a container starts but behaves oddly.
 
-**Key environment variables to configure:**
+`.env` is committed and holds the values that are not secret: `TOKEN_TIME`, `REFRESH_TOKEN_TIME`, `CURRENT_WC3_SEASON` and `W3C_URL`. `create_app` calls `load_dotenv`, so those arrive on their own. The rest are passed in.
 
-```json
-{
-  "env": {
-    "DB_URL": "mysql+pymysql://gym_user:gym_user@host.docker.internal:3306/GYM_BACKEND",
-    "ADMIN_TOKEN": "your-admin-token-here",
-    "JWT_SECRET_KEY": "your-secret-key-here",
-    "JWT_ALGORITHM": "HS256",
-    "BOT_CLIENT_TOKEN": "your-bot-client-token-here",
-    "FRONTEND_URL": "http://localhost:5003",
-    "BOT_WEBHOOK_URL": "http://host.docker.internal:3001/webhook/series-updated"
-  }
-}
+**Key environment variables:**
+
+```bash
+DB_URL="mysql+pymysql://gym_user:gym_user@host.docker.internal:3306/GYM_BACKEND"
+ADMIN_TOKEN="your-admin-token-here"
+JWT_SECRET_KEY="your-secret-key-here"
+JWT_ALGORITHM="HS256"
+BOT_CLIENT_TOKEN="your-bot-client-token-here"
+FRONTEND_URL="http://localhost:5003"
+BOT_WEBHOOK_URL="http://host.docker.internal:3001/webhook/series-updated"
 ```
 
 **Environment Variable Explanations:**
@@ -130,17 +128,13 @@ The container starts with development-only values (`ADMIN_TOKEN=devtoken`, `JWT_
 
 If `just` is installed system-wide, the `uv run` prefix is optional.
 
-### Using VS Code Docker Tasks
+### Debugging in VS Code
 
-1. Open the **Run and Debug** panel (Ctrl+Shift+D)
-2. Select **"docker-run: debug"** from the dropdown
-3. Press F5 or click the green play button
+`.vscode/launch.json` holds one configuration, **Debug the backend**. Start MySQL with `uv run just up`, then open the **Run and Debug** panel (Ctrl+Shift+D), pick it and press F5.
 
-This will:
-- Build the Docker image (`eashibby/gnl_backend:latest`)
-- Start the container with environment variables from tasks.json
-- Run uvicorn on port 5002
-- Attach debugger for breakpoint support
+It runs uvicorn on port 5002 on your machine, under the debugger, against the MySQL container. Breakpoints work because the code runs on the host rather than in a container, and `--reload` picks up an edit without a restart. Stop the backend container first, or both will want port 5002.
+
+Debugging the code *inside* the container is not set up. That needs `debugpy` in the image, and the image installs with `--no-dev`, so the dependency would have to ship to production or the image would need a separate debug target. Neither exists today.
 
 ### Accessing the Application
 
@@ -259,7 +253,7 @@ uv sync
 
 ### Port 5002 Already in Use
 
-**Solution:** Stop existing process or change port in tasks.json
+**Solution:** Stop whatever holds the port. The usual cause is the backend container and the debug configuration both wanting 5002: run `uv run just down`, or change the port in `.vscode/launch.json`.
 ```bash
 # Find process using port
 netstat -ano | findstr :5002
@@ -275,9 +269,11 @@ backend/
 ├── pyproject.toml          # Project metadata and dependencies
 ├── uv.lock                 # Pinned dependency versions (managed by uv)
 ├── Dockerfile             # Docker image definition
+├── justfile               # The everyday commands
+├── .env                   # Committed configuration that is not secret
 ├── .vscode/
-│   └── tasks.json         # VS Code build/run tasks
-├── db_scripts/            # Database migration scripts
+│   └── launch.json        # VS Code debug configuration
+├── db_scripts/            # Hand-run SQL. Alembic owns the schema, not this
 ├── tests/                 # pytest suite
 ├── app/
 │   ├── main.py            # The application factory, create_app
@@ -290,8 +286,7 @@ backend/
 │   │   ├── db.py          # Engine and session factory
 │   │   └── security.py    # Token minting and validation
 │   ├── services/          # One service per entity
-│   ├── models/            # SQLModel table models
-│   ├── schemas/           # Pydantic schemas
+│   ├── models/            # SQLModel table models and their API schemas
 │   └── utils/             # Utility functions
 ├── alembic.ini            # Alembic configuration
 └── migrations/            # Schema migrations
