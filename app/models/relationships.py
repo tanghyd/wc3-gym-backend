@@ -58,6 +58,12 @@ class DBTeamSeason(DBModel, table=True):
     # Relationships
     team: "Team" = Relationship(back_populates="season_info")
     season: "Season" = Relationship(back_populates="teams")
+    # The three coaches keep Optional[...] where the rest of the code writes
+    # `X | None`. app/models/user.py imports this module, so User can only be
+    # a forward reference here, and SQLModel reads a nullable relationship by
+    # unwrapping a real union object to find the target. Optional["User"] is
+    # a union holding a quoted name; "User | None" is one opaque string that
+    # reaches SQLAlchemy unparsed and leaves every mapper unconfigured.
     coach_1: Optional["User"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[DBTeamSeason.coach_1_id]"}
     )

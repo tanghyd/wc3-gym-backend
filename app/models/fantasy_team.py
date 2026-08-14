@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Any, Optional, Self
+from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from pydantic import field_serializer
 from sqlalchemy.orm import Session
@@ -37,7 +37,7 @@ class FantasyTeam(FantasyTeamBase, DBModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     drafted_race: Race | None = None
 
-    drafted_team: Optional["Team"] = Relationship(
+    drafted_team: Team | None = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[FantasyTeam.drafted_team_id]"}
     )
     captain: "User" = Relationship(
@@ -129,11 +129,14 @@ class FantasyTeamPublic(FantasyTeamBase):
     # validator.
     drafted_players: Annotated[list[UserPublic] | None, DropNoneItems] = None
 
+    # Only the empty list needs handling; pydantic serializes the players
+    # itself. Returning them instead of their dicts keeps UserPublic in the
+    # published schema, because pydantic builds that from this return type.
     @field_serializer("drafted_players", when_used="json")
     def _drafted_players_json(
         self, value: list[UserPublic] | None
-    ) -> list[dict[str, Any]] | None:
-        return [user.to_dict() for user in value] if value else None
+    ) -> list[UserPublic] | None:
+        return value if value else None
 
     @classmethod
     def from_fantasy_team(cls, fteam: FantasyTeam | None) -> Self | None:
