@@ -20,7 +20,9 @@ class ConcatenationType:
             instance = super().__new__(cls, *args, **kwargs)
             instance.value = value
             cls._instances[value] = instance
-        return cls._instances[value]
+        # The cache is shared by the whole class tree, so the entry is only
+        # a cls instance because nothing subclasses this.
+        return cast(Self, cls._instances[value])
 
     def __repr__(self) -> str:
         return f"ConcatenationType({self.value})"
