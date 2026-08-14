@@ -12,6 +12,11 @@ from app.api.deps import (
     require_admin,
 )
 from app.exceptions import NotFoundException
+from app.schemas.team import Team, TeamReduced
+from app.services.matches import MatchService
+from app.services.scores import ScoreService
+from app.services.seasons import SeasonService
+from app.services.series import SeriesService
 from app.utils.query_util import QueryUtil
 
 logger = logging.getLogger(__name__)
@@ -82,11 +87,15 @@ def calc_score(
 
 
 def perform_calculation(
-    season_id: int, season_service, match_service, series_service, score_service
-):
+    season_id: int,
+    season_service: SeasonService,
+    match_service: MatchService,
+    series_service: SeriesService,
+    score_service: ScoreService,
+) -> dict[str, Any] | None:
     """Perform the actual score calculation with progress tracking"""
     try:
-        teams = {}
+        teams: dict[int, Team | TeamReduced] = {}
         season = season_service.get_season(season_id)
         if season:
             season = season.to_dict()

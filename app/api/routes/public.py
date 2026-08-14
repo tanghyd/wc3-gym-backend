@@ -20,7 +20,10 @@ from app.api.deps import (
 )
 from app.schemas.fantasy_bet import FantasyBet
 from app.schemas.fantasy_team import FantasyTeam
+from app.schemas.series import Series
 from app.schemas.user import User
+from app.services.series import SeriesService
+from app.services.users import UserService
 from app.utils.files import secure_filename
 from app.utils.query_util import QueryUtil
 
@@ -30,10 +33,10 @@ router = APIRouter(tags=["public"])
 
 # Simple in-memory token store: token -> {discord_id, discord_tag, season_id, expires_at, access_type}
 # access_type can be 'signup' or 'dashboard'
-_token_store = {}
+_token_store: dict[str, dict[str, Any]] = {}
 
 
-def _cleanup_expired():
+def _cleanup_expired() -> None:
     # use timezone-aware UTC now
     now = datetime.now(UTC)
     expired = [t for t, v in _token_store.items() if v["expires_at"] <= now]
@@ -41,7 +44,12 @@ def _cleanup_expired():
         del _token_store[t]
 
 
-def _notify_discord_series_update(series, player_name, action, uploaded_files=None):
+def _notify_discord_series_update(
+    series: Series,
+    player_name: str,
+    action: str,
+    uploaded_files: dict[str, dict[str, Any]] | None = None,
+) -> bool:
     """Send series update notification to Discord bot webhook with optional file attachments
 
     This function is designed to be non-blocking - if Discord notifications fail,
@@ -409,13 +417,13 @@ async def update_player_series(
 
 
 def _update_player_series(
-    series_id,
-    content_type,
-    data,
-    files,
-    user_service,
-    series_service,
-):
+    series_id: int,
+    content_type: str | None,
+    data: dict[str, Any],
+    files: dict[str, dict[str, Any]],
+    user_service: UserService,
+    series_service: SeriesService,
+) -> JSONResponse | dict[str, Any]:
     token = data.get("token")
     if not token:
         return JSONResponse({"error": "missing token"}, status_code=400)
@@ -463,7 +471,7 @@ def _update_player_series(
         f"Files details: {[(k, v['filename'] if v['filename'] else 'no filename') for k, v in files.items()]}"
     )
 
-    def allowed_file(filename):
+    def allowed_file(filename: str) -> bool:
         return (
             "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_extensions
         )

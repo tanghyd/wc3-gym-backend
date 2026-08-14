@@ -29,6 +29,14 @@ from app.schemas.season import Season
 from app.schemas.series import Series
 from app.schemas.team import Team
 from app.schemas.user import User
+from app.services.fantasy_bets import FantasyBetService
+from app.services.fantasy_teams import FantasyTeamService
+from app.services.maps import MapService
+from app.services.matches import MatchService
+from app.services.seasons import SeasonService
+from app.services.series import SeriesService
+from app.services.teams import TeamService
+from app.services.users import UserService
 from app.utils.import_util import ImportUtil
 from app.utils.query_util import QueryUtil
 
@@ -38,17 +46,17 @@ router = APIRouter(tags=["import export"])
 
 
 def _process_import(
-    file_bytes,
-    create_new,
-    season_service,
-    map_service,
-    team_service,
-    user_service,
-    match_service,
-    series_service,
-    fantasy_team_service,
-    fantasy_bet_service,
-):
+    file_bytes: bytes,
+    create_new: bool,
+    season_service: SeasonService,
+    map_service: MapService,
+    team_service: TeamService,
+    user_service: UserService,
+    match_service: MatchService,
+    series_service: SeriesService,
+    fantasy_team_service: FantasyTeamService,
+    fantasy_bet_service: FantasyBetService,
+) -> None:
     """
     Helper function to process import. Can be called synchronously or in a thread.
 
