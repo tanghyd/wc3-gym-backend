@@ -12,6 +12,7 @@ from app.utils.query_util import QueryUtil
 if TYPE_CHECKING:
     from app.models.fantasy_team import FantasyTeamPublic
     from app.models.season import SeasonPublic
+    from app.models.series import SeriesPublic
 
 # A player's race arrives as the enum, as its plain value, or not at all,
 # so anything keyed by race carries all three.
@@ -40,16 +41,32 @@ class FantasyScoreService:
         self.series_app_service = series_app_service
         self.team_app_service = team_app_service
 
+    def _season_series_by_week(
+        self, season: "SeasonPublic"
+    ) -> dict[int, list["SeriesPublic"]]:
+        """All series of the season, one query per week."""
+        return {
+            week: self.series_app_service.searchForSeasonAndPlayday(
+                season.id, week, None
+            )
+            or []
+            for week in range(1, season.number_weeks + 1)
+        }
+
     # The flag also changes the result: the totals alone, or the totals
     # with the per-week detail beside them.
     def _calculate_race_points(
-        self, season: "SeasonPublic", include_weekly_details: bool = False
+        self,
+        season: "SeasonPublic",
+        series_by_week: dict[int, list["SeriesPublic"]],
+        include_weekly_details: bool = False,
     ) -> RacePoints | tuple[RacePoints, RaceStats, RaceWeeklyDetails]:
         """
         Calculate race points for all races in a season.
 
         Args:
             season: The season to calculate points for
+            series_by_week: The season's series keyed by week
             include_weekly_details: If True, includes weekly breakdown and overall stats
 
         Returns:
@@ -63,9 +80,7 @@ class FantasyScoreService:
         )
 
         for week in range(1, season.number_weeks + 1):
-            season_week_series = self.series_app_service.searchForSeasonAndPlayday(
-                season.id, week, None
-            )
+            season_week_series = series_by_week.get(week, [])
             week_race_wins = {}
             week_race_looses = {}
 
@@ -181,6 +196,7 @@ class FantasyScoreService:
         fantasy_team: "FantasyTeamPublic",
         season: "SeasonPublic",
         race_points: RacePoints,
+        series_by_week: dict[int, list["SeriesPublic"]],
         include_breakdown: bool = False,
     ) -> dict[str, Any]:
         """
@@ -190,6 +206,7 @@ class FantasyScoreService:
             fantasy_team: The fantasy team to calculate scores for
             season: The season to calculate scores for
             race_points: Pre-calculated race points dictionary
+            series_by_week: The season's series keyed by week
             include_breakdown: If True, returns detailed breakdown; if False, returns just totals
 
         Returns:
@@ -227,15 +244,11 @@ class FantasyScoreService:
                     }
 
                 for week in range(1, season.number_weeks + 1):
-                    series_q_string = (
-                        f"player1_id=={player.id} or player2_id=={player.id}"
-                    )
-                    series_query = QueryUtil.parseQuery(series_q_string)
-                    week_player_series = (
-                        self.series_app_service.searchForSeasonAndPlayday(
-                            season.id, week, series_query
-                        )
-                    )
+                    week_player_series = [
+                        series
+                        for series in series_by_week.get(week, [])
+                        if player.id in (series.player1_id, series.player2_id)
+                    ]
 
                     week_points = 0
                     week_data = None
@@ -379,13 +392,16 @@ class FantasyScoreService:
         return result
 
     def calculateTeamScores(self, season: "SeasonPublic") -> None:
-        race_points = self._calculate_race_points(season, include_weekly_details=False)
+        series_by_week = self._season_series_by_week(season)
+        race_points = self._calculate_race_points(
+            season, series_by_week, include_weekly_details=False
+        )
 
         fteams = self.fantasy_team_service.getAll_fantasy_teams()
         if fteams:
             for fteam in fteams:
                 scores = self._calculate_fantasy_team_scores(
-                    fteam, season, race_points, include_breakdown=False
+                    fteam, season, race_points, series_by_week, include_breakdown=False
                 )
 
                 # Store through the Update models. The bet update skips
@@ -439,13 +455,14 @@ class FantasyScoreService:
         }
 
         # Calculate race points for all races using shared method
+        series_by_week = self._season_series_by_week(season)
         race_points, race_stats, race_weekly_details = self._calculate_race_points(
-            season, include_weekly_details=True
+            season, series_by_week, include_weekly_details=True
         )
 
         # Calculate all score components using shared method
         scores = self._calculate_fantasy_team_scores(
-            fantasy_team, season, race_points, include_breakdown=True
+            fantasy_team, season, race_points, series_by_week, include_breakdown=True
         )
 
         # Merge scores into breakdown structure
