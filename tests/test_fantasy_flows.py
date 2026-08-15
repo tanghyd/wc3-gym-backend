@@ -109,6 +109,53 @@ def test_bet_update_carrying_bet_points_validates_them(
         assert "bet_points" in resp.json()["error"]
 
 
+def test_add_and_remove_players(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    team_id = seeded["fantasy_team_id"]
+    p1, p2 = seeded["player_ids"][:2]
+
+    resp = client.post(
+        f"/fantasy/teams/addPlayers/{team_id}",
+        json={"player_ids": [p1, p2]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert {p["id"] for p in resp.json()["drafted_players"]} == {p1, p2}
+
+    resp = client.post(
+        f"/fantasy/teams/removePlayers/{team_id}",
+        json={"player_ids": [p2]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert {p["id"] for p in resp.json()["drafted_players"]} == {p1}
+
+
+def test_player_management_rejects_bad_input(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    team_id = seeded["fantasy_team_id"]
+    p1 = seeded["player_ids"][0]
+
+    # A body without player_ids is invalid, not a server error.
+    resp = client.post(
+        f"/fantasy/teams/addPlayers/{team_id}", json={}, headers=auth_headers
+    )
+    assert resp.status_code == 422
+    assert "error" in resp.json()
+
+    # Unknown ids answer 404: team, user, and a user not on the team.
+    for path, body in [
+        ("/fantasy/teams/addPlayers/9999", {"player_ids": [p1]}),
+        (f"/fantasy/teams/addPlayers/{team_id}", {"player_ids": [9999]}),
+        (f"/fantasy/teams/removePlayers/{team_id}", {"player_ids": [p1]}),
+    ]:
+        resp = client.post(path, json=body, headers=auth_headers)
+        assert resp.status_code == 404, path
+        assert "error" in resp.json()
+
+
 def test_calculate_twice_is_stable(
     client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
 ) -> None:
