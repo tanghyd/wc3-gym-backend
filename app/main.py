@@ -21,11 +21,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.deps import AuthError
 from app.api.main import api_router
 from app.core.db import init_engine
-from app.exceptions import DBException, NotFoundException
+from app.exceptions import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -69,15 +71,18 @@ def create_app(db_url: str | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.exception_handler(NotFoundException)
-    async def not_found(request: Request, exc: NotFoundException) -> JSONResponse:
+    @app.exception_handler(NotFoundError)
+    async def not_found(request: Request, exc: NotFoundError) -> JSONResponse:
         logger.error(exc)
         return JSONResponse({"error": str(exc)}, status_code=404)
 
-    @app.exception_handler(DBException)
-    async def db_error(request: Request, exc: DBException) -> JSONResponse:
-        logger.error(exc)
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    @app.exception_handler(SQLAlchemyError)
+    async def db_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+        """The database itself failed. The message is fixed because it
+        goes to the client; what the database said, including the
+        statement, goes to the log."""
+        logger.error("Database error", exc_info=exc)
+        return JSONResponse({"error": "Database error"}, status_code=500)
 
     @app.exception_handler(AuthError)
     async def auth_error(request: Request, exc: AuthError) -> JSONResponse:
@@ -100,10 +105,24 @@ def create_app(db_url: str | None = None) -> FastAPI:
         logger.error("Invalid request: %s", problems)
         return JSONResponse({"error": problems}, status_code=422)
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        """The router's own errors: unknown path, wrong method.
+
+        Registered for Starlette's class, not FastAPI's, because the
+        router raises Starlette's and FastAPI's inherits from it — this
+        handler answers for both. It keeps the error envelope every
+        other answer uses."""
+        return JSONResponse(
+            {"error": exc.detail}, status_code=exc.status_code, headers=exc.headers
+        )
+
     @app.exception_handler(Exception)
     async def unhandled(request: Request, exc: Exception) -> JSONResponse:
-        logger.error(exc)
-        return JSONResponse({"error": str(exc)}, status_code=500)
+        """A bug. The body names no detail; the detail and the traceback
+        go to the log."""
+        logger.error("Unhandled error", exc_info=exc)
+        return JSONResponse({"error": "Internal Server Error"}, status_code=500)
 
     app.include_router(api_router)
 
