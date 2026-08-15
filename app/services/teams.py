@@ -5,10 +5,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from app.exceptions import NotFoundError
-from app.models.relationships import DBTeamSeason, DBUserTeamSeason
 from app.models.season import Season
 from app.models.team import Team, TeamCreate, TeamPublic, TeamUpdate
+from app.models.team_season import DBTeamSeason
 from app.models.user import User
+from app.models.user_team_season import DBUserTeamSeason
 from app.services.base import BaseService
 from app.services.users import UserService
 from app.utils.query_util import QueryElement, QueryUtil

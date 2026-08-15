@@ -11,7 +11,8 @@ from app.models.types import NoneToList, NumToStr
 from app.models.user import UserPublic
 
 if TYPE_CHECKING:
-    from app.models.relationships import DBTeamSeason, DBUserTeamSeason
+    from app.models.team_season import DBTeamSeason
+    from app.models.user_team_season import DBUserTeamSeason
 
 
 def _season_lists(value: Any) -> Any:  # noqa: ANN401  # a validator sees raw input

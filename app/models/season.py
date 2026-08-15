@@ -8,12 +8,9 @@ from app.models.map import MapPublic
 from app.models.types import IsoDate, LenientDate, NoneToList, NumToStr
 
 if TYPE_CHECKING:
-    from app.models.relationships import (
-        DBMapSeason,
-        DBTeamSeason,
-        DBUserSeasonSignup,
-        DBUserTeamSeason,
-    )
+    from app.models.relationships import DBMapSeason, DBUserSeasonSignup
+    from app.models.team_season import DBTeamSeason
+    from app.models.user_team_season import DBUserTeamSeason
 
 
 class SeasonBase(SQLModel):

@@ -26,9 +26,10 @@ from app.models import (
     settings,
     team,
     team_reduced,
+    team_season,
     types,
     user,
-    user_team_season_stats,
+    user_team_season,
     w3c_stats,
 )
 
@@ -52,8 +53,9 @@ __all__ = [
     "settings",
     "team",
     "team_reduced",
+    "team_season",
     "types",
     "user",
-    "user_team_season_stats",
+    "user_team_season",
     "w3c_stats",
 ]

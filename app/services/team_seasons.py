@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.exceptions import NotFoundError
-from app.models.relationships import DBTeamSeason
 from app.models.season_info import SeasonInfoPublic, SeasonInfoUpdate
+from app.models.team_season import DBTeamSeason
 from app.services.base import BaseService
 
 logger = logging.getLogger(__name__)

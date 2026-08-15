@@ -6,16 +6,13 @@ from app.models.base import DBModel
 from app.models.enums import Race
 from app.models.season import SeasonPublic
 from app.models.types import NoneToList, NumToStr
-from app.models.user_team_season_stats import UserTeamSeasonStatsPublic
+from app.models.user_team_season import UserTeamSeasonStatsPublic
 from app.models.w3c_stats import W3CStats, W3CStatsPublic
 
 if TYPE_CHECKING:
     from app.models.player_career_stats import PlayerCareerStats
-    from app.models.relationships import (
-        DBFantasyTeamPlayer,
-        DBUserSeasonSignup,
-        DBUserTeamSeason,
-    )
+    from app.models.relationships import DBFantasyTeamPlayer, DBUserSeasonSignup
+    from app.models.user_team_season import DBUserTeamSeason
 
 
 class UserBase(SQLModel):

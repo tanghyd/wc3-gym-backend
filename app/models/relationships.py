@@ -1,6 +1,11 @@
-from typing import TYPE_CHECKING, Any, Optional
+"""Link tables that carry nothing beyond the keys.
 
-from sqlalchemy import JSON, Column
+The link tables with columns of their own are models in their own files:
+team_season.py and user_team_season.py.
+"""
+
+from typing import TYPE_CHECKING
+
 from sqlmodel import Field, Relationship
 
 from app.models.base import DBModel
@@ -9,26 +14,7 @@ if TYPE_CHECKING:
     from app.models.fantasy_team import FantasyTeam
     from app.models.map import Map
     from app.models.season import Season
-    from app.models.team import Team
     from app.models.user import User
-
-
-class DBUserTeamSeason(DBModel, table=True):
-    __tablename__ = "user_team_season"
-    user_id: int = Field(foreign_key="users.id", primary_key=True)
-    team_id: int = Field(foreign_key="teams.id", primary_key=True)
-    season_id: int = Field(foreign_key="seasons.id", primary_key=True)
-    games: int | None = None
-    wins: int | None = None
-    losses: int | None = None
-    # Array of opponent races: ['HU', 'OC', 'UD', etc.]
-    matchup_history: list[Any] | None = Field(
-        default=None, sa_column=Column("matchup_history", JSON)
-    )
-    # Additional columns can be added here if needed
-    user: "User" = Relationship(back_populates="team_seasons")
-    team: "Team" = Relationship(back_populates="user_seasons")
-    season: "Season" = Relationship(back_populates="user_teams")
 
 
 class DBUserSeasonSignup(DBModel, table=True):
@@ -38,37 +24,6 @@ class DBUserSeasonSignup(DBModel, table=True):
     # Additional columns can be added here if needed
     user: "User" = Relationship(back_populates="signup_seasons")
     season: "Season" = Relationship(back_populates="signup_users")
-
-
-class DBTeamSeason(DBModel, table=True):
-    __tablename__ = "team_season"
-    team_id: int = Field(foreign_key="teams.id", primary_key=True)
-    season_id: int = Field(foreign_key="seasons.id", primary_key=True)
-    # Team coaches (up to 3)
-    coach_1_id: int | None = Field(default=None, foreign_key="users.id")
-    coach_2_id: int | None = Field(default=None, foreign_key="users.id")
-    coach_3_id: int | None = Field(default=None, foreign_key="users.id")
-    # Additional columns
-    final_score: int | None = None
-    points_available: int | None = None
-    points_against: int | None = None
-    maps_won: int | None = None
-    maps_lost: int | None = None
-    # Relationships
-    team: "Team" = Relationship(back_populates="season_info")
-    season: "Season" = Relationship(back_populates="teams")
-    # User | None needs User imported here, and importing it fails: user.py imports
-    # DBUserTeamSeason from this module. So the target stays quoted, and SQLModel reads
-    # a quoted target only inside Optional - "User | None" reaches SQLAlchemy as a name.
-    coach_1: Optional["User"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[DBTeamSeason.coach_1_id]"}
-    )
-    coach_2: Optional["User"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[DBTeamSeason.coach_2_id]"}
-    )
-    coach_3: Optional["User"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[DBTeamSeason.coach_3_id]"}
-    )
 
 
 class DBMapSeason(DBModel, table=True):
