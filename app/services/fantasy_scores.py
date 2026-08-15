@@ -431,7 +431,7 @@ class FantasyScoreService:
         Get detailed breakdown of how a fantasy team's score was calculated
         Returns a dictionary with all components and their calculations
         """
-        # get_fantasy_team raises NotFoundException for an unknown id.
+        # get_fantasy_team raises NotFoundError for an unknown id.
         fantasy_team = self.fantasy_team_service.get_fantasy_team(fantasy_team_id)
 
         breakdown = {
