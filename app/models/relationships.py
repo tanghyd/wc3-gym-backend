@@ -1,7 +1,6 @@
-from typing import TYPE_CHECKING, Any, Optional, Self
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, Column, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship
 
 from app.models.base import DBModel
@@ -70,23 +69,6 @@ class DBTeamSeason(DBModel, table=True):
     coach_3: Optional["User"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[DBTeamSeason.coach_3_id]"}
     )
-
-    @classmethod
-    def updateSeasonInfo(
-        cls, session: Session, obj_id: int, team_id: int, **kwargs: object
-    ) -> Self | None:
-        # Eager load related entities to prevent N+1 queries
-        obj = session.scalars(
-            select(cls)
-            .options(joinedload(cls.team), joinedload(cls.season))
-            .where(cls.team_id == team_id, cls.season_id == obj_id)
-            .limit(1)
-        ).first()
-        if obj:
-            for key, value in kwargs.items():
-                setattr(obj, key, value)
-            session.flush()
-        return obj
 
 
 class DBMapSeason(DBModel, table=True):
