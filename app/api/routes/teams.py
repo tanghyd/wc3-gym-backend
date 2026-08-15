@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, File, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.deps import TeamServiceDep, require_admin, ttl_cache
+from app.exceptions import BadRequestError
 from app.models.team import TeamCreate, TeamPublic, TeamUpdate
 from app.utils.query_util import QueryUtil
 
@@ -44,41 +45,37 @@ def delete_team(team_id: int, service: TeamServiceDep) -> None:
 
 
 @router.get("/teams/basic")
-def get_all_teams_basic(service: TeamServiceDep) -> list[dict[str, Any]]:
+def get_all_teams_basic(service: TeamServiceDep) -> list[TeamPublic]:
     """Retrieve all teams with basic information only (id, name, long_name, discord_role). No user or season data included."""
-    return [team.to_dict() for team in service.getAll_basic() or []]
+    return service.getAll_basic() or []
 
 
 @router.get("/teams/{team_id}")
-def get_team(team_id: int, service: TeamServiceDep) -> dict[str, Any] | None:
+def get_team(team_id: int, service: TeamServiceDep) -> TeamPublic:
     """Retrieve a team by its ID."""
-    team = service.get_team(team_id)
-    return team.to_dict() if team else None
+    return service.get_team(team_id)
 
 
 @router.get("/teams/{team_id}/seasons/{season_id}")
 def get_team_season(
     team_id: int, season_id: int, service: TeamServiceDep
-) -> dict[str, Any] | None:
+) -> TeamPublic:
     """Retrieve a team by its ID with all information related to a specific season"""
-    team = service.get_team_season(team_id, season_id)
-    return team.to_dict() if team else None
+    return service.get_team_season(team_id, season_id)
 
 
 @router.get("/teams/season/{season_id}")
-def get_all_teams_season(
-    season_id: int, service: TeamServiceDep
-) -> list[dict[str, Any]]:
+def get_all_teams_season(season_id: int, service: TeamServiceDep) -> list[TeamPublic]:
     """Retrieve all teams with all information related to a specific season"""
-    return [team.to_dict() for team in service.get_teams_season(season_id) or []]
+    return service.get_teams_season(season_id) or []
 
 
 @router.get("/teams/season/{season_id}/basic")
 def get_all_teams_season_basic(
     season_id: int, service: TeamServiceDep
-) -> list[dict[str, Any]]:
+) -> list[TeamPublic]:
     """Retrieve all teams with season info but without user data for a specific season"""
-    return [team.to_dict() for team in service.get_teams_season_basic(season_id) or []]
+    return service.get_teams_season_basic(season_id) or []
 
 
 @router.post(
@@ -90,10 +87,9 @@ def add_players(
     season_id: int,
     data: Annotated[dict, Body()],
     service: TeamServiceDep,
-) -> dict[str, Any] | None:
+) -> TeamPublic:
     """Add players to a team for a season using their IDs."""
-    team = service.addPlayers(team_id, season_id, data.get("player_ids"))
-    return team.to_dict() if team else None
+    return service.addPlayers(team_id, season_id, data.get("player_ids"))
 
 
 @router.post(
@@ -105,10 +101,9 @@ def remove_players(
     season_id: int,
     data: Annotated[dict, Body()],
     service: TeamServiceDep,
-) -> dict[str, Any] | None:
+) -> TeamPublic:
     """Removes players from a team for a season using their IDs."""
-    team = service.removePlayers(team_id, season_id, data.get("player_ids"))
-    return team.to_dict() if team else None
+    return service.removePlayers(team_id, season_id, data.get("player_ids"))
 
 
 @router.put(
@@ -120,35 +115,29 @@ def set_coaches(
     season_id: int,
     data: Annotated[dict, Body()],
     service: TeamServiceDep,
-) -> JSONResponse:
+) -> TeamPublic:
     """Set up to 3 coaches for a team in a specific season. Replaces existing coaches."""
     coach_ids = data.get("coach_ids", [])
 
     if len(coach_ids) > 3:
-        return JSONResponse(
-            {"error": "Cannot assign more than 3 coaches per team per season"},
-            status_code=400,
-        )
+        raise BadRequestError("Cannot assign more than 3 coaches per team per season")
 
-    team = service.setCoaches(team_id, season_id, coach_ids)
-    if team:
-        team = team.to_dict()
-    return JSONResponse(team, status_code=200)
+    return service.setCoaches(team_id, season_id, coach_ids)
 
 
 @router.get("/teams")
-def get_all_teams(service: TeamServiceDep) -> list[dict[str, Any]]:
+def get_all_teams(service: TeamServiceDep) -> list[TeamPublic]:
     """Retrieve all teams."""
-    return [team.to_dict() for team in service.getAll() or []]
+    return service.getAll() or []
 
 
 @router.post("/teams/search")
-def search_teams(service: TeamServiceDep, query: str = "") -> list[dict[str, Any]]:
+def search_teams(service: TeamServiceDep, query: str = "") -> list[TeamPublic]:
     """Search teams by criteria using a custom query format."""
     parsed_query = QueryUtil.parseQuery(query)
     if not parsed_query or not parsed_query.elementA:
         raise Exception(f"No valid query found: {query}")
-    return [team.to_dict() for team in service.search(parsed_query) or []]
+    return service.search(parsed_query) or []
 
 
 @router.post(
