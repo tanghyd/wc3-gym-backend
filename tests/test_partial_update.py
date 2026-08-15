@@ -1,7 +1,7 @@
 """A PUT that carries some fields leaves the others alone.
 
-The update schemas mark every field optional and the services write only the
-fields the request carries, so a field the body omits keeps its value.
+The update schemas mark every field optional and the services write only the fields the
+request carries, so a field the body omits keeps its value.
 """
 
 from typing import Any

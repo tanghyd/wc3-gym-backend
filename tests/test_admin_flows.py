@@ -1,16 +1,16 @@
 """The write flows the admin frontend drives, through the API.
 
-The league is built the way an administrator builds it: create the players
-and the teams, put the teams in a season, fill the rosters, create the match
-and the series, then enter a result.
+The league is built the way an administrator builds it: create the players and the
+teams, put the teams in a season, fill the rosters, create the match and the series,
+then enter a result.
 
-Entering a result cascades. PUT /series/{id} converts the map score to points,
-rewrites the per-player season stats, adds the series points into the match
-score, and rewrites final_score, points_against and points_available on both
-team season rows. The assertions walk that chain one step at a time.
+Entering a result cascades. PUT /series/{id} converts the map score to points, rewrites
+the per-player season stats, adds the series points into the match score, and rewrites
+final_score, points_against and points_available on both team season rows. The
+assertions walk that chain one step at a time.
 
-Two tests are xfail(strict=True) on defects they pin. A fix turns them XPASS
-and fails the run, so the marker goes with the fix.
+Two tests are xfail(strict=True) on defects they pin. A fix turns them XPASS and fails
+the run, so the marker goes with the fix.
 """
 
 from typing import Any
@@ -301,9 +301,9 @@ def test_a_team_on_its_own_carries_no_roster(
 ) -> None:
     """GET /teams/{id} answers an empty player_by_season.
 
-    The query behind it loads Team.user_seasons with noload("*"), so the
-    link rows arrive without their user and the frontend reads the roster
-    from /teams/{id}/seasons/{id} instead.
+    The query behind it loads Team.user_seasons with noload("*"), so the link rows
+    arrive without their user and the frontend reads the roster from
+    /teams/{id}/seasons/{id} instead.
     """
     assert get(client, f"/teams/{league['team_a_id']}")["player_by_season"] == {}
 

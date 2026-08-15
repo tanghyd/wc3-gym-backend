@@ -58,9 +58,9 @@ class DBTeamSeason(DBModel, table=True):
     # Relationships
     team: "Team" = Relationship(back_populates="season_info")
     season: "Season" = Relationship(back_populates="teams")
-    # Optional["User"], not "User | None": SQLModel resolves a quoted target only
-    # inside Optional. User stays quoted because importing it closes the cycle
-    # relationships -> user -> season.
+    # User | None needs User imported here, and importing it fails: user.py imports
+    # DBUserTeamSeason from this module. So the target stays quoted, and SQLModel reads
+    # a quoted target only inside Optional - "User | None" reaches SQLAlchemy as a name.
     coach_1: Optional["User"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[DBTeamSeason.coach_1_id]"}
     )

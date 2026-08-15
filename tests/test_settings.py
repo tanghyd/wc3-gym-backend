@@ -1,7 +1,7 @@
 """DELETE /config/settings/{key} answers by whether the key exists.
 
-The admin frontend reads the status code to decide a delete worked, so both
-answers are pinned here.
+The admin frontend reads the status code to decide a delete worked, so both answers
+are pinned here.
 """
 
 from typing import Any

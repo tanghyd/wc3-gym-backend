@@ -29,8 +29,8 @@ from app.exceptions import DBException, NotFoundException
 
 logger = logging.getLogger(__name__)
 
-# Production has one CPU core. The routes are sync functions, so this caps
-# the thread pool they run in and the server handles one request at a time.
+# NOTE (Aug 26): production currently has one CPU core. The routes are sync functions,
+# so this caps the thread pool they run in and the server answers one request at a time.
 MAX_CONCURRENT_REQUESTS = 1
 
 

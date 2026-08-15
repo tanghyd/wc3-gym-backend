@@ -1,8 +1,8 @@
 """Create the initial schema
 
-On a database that already holds every table, upgrade() records the
-revision and creates nothing; `alembic stamp head` has the same effect.
-A database holding only some of them stops the migration.
+On a database that already holds every table, upgrade() records the revision and
+creates nothing; `alembic stamp head` has the same effect. A database holding only
+some of them stops the migration.
 
 Revision ID: 658616cf0c2b
 Revises:

@@ -32,8 +32,8 @@ from app.services.users import UserService
 class AuthError(Exception):
     """A request without a valid token.
 
-    Clients read the status and the {"msg": ...} body: 401 for a missing header
-    or an expired token, 422 for a malformed token or the wrong token type."""
+    Clients read the status and the {"msg": ...} body: 401 for a missing header or an
+    expired token, 422 for a malformed token or the wrong token type."""
 
     def __init__(self, message: str, status_code: int = 401) -> None:
         super().__init__(message)
@@ -77,8 +77,8 @@ RequireAdmin = Annotated[str, Depends(require_admin)]
 RequireRefresh = Annotated[str, Depends(require_refresh)]
 
 
-# Score and series need each other, so score is built first and receives
-# series right after.
+# Score and series need each other, so score is built first and receives series
+# right after.
 settings_service = SettingsService()
 user_service = UserService(settings_app_service=settings_service)
 team_service = TeamService(user_app_service=user_service)
@@ -110,8 +110,8 @@ fantasy_score_service = FantasyScoreService(
 koth_service = KothService(settings_app_service=settings_service)
 stats_service = PlayerCareerStatsService(series_service=series_service)
 
-# 24-hour markers, e.g. the per-team W3C sync rate limit. Per process, and
-# gone on restart.
+# 24-hour markers, e.g. the per-team W3C sync rate limit. Per process, and gone
+# on restart.
 ttl_cache: dict[str, float] = {}
 
 

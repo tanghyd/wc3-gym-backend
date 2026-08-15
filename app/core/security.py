@@ -1,9 +1,4 @@
-"""Admin token minting and validation.
-
-HS256 (JWT_ALGORITHM) signed with JWT_SECRET_KEY, with sub, type, jti, iat,
-nbf and exp claims. Clients hold tokens signed this way, so the algorithm and
-the claim set are fixed.
-"""
+"""Admin token minting and validation."""
 
 import os
 import uuid

@@ -1,7 +1,7 @@
 """A request that names a row which does not exist answers 404.
 
-The status is part of the contract the frontend and the Discord bot read,
-so it is pinned here.
+The status is part of the contract the frontend and the Discord bot read, so it is
+pinned here.
 """
 
 from typing import Any
