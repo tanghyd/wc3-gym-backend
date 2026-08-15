@@ -1,9 +1,8 @@
 """Admin token minting and validation.
 
-The tokens are compatible with the ones flask_jwt_extended issued before
-the FastAPI port: HS256 (JWT_ALGORITHM) signed with JWT_SECRET_KEY, with
-sub, type, jti, iat, nbf and exp claims. A token issued before the port
-keeps working after it.
+HS256 (JWT_ALGORITHM) signed with JWT_SECRET_KEY, with sub, type, jti, iat,
+nbf and exp claims. Clients hold tokens signed this way, so the algorithm and
+the claim set are fixed.
 """
 
 import os
