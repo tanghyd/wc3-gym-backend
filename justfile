@@ -70,7 +70,7 @@ up:
     # /health runs a query, so an answer also proves the database link.
     echo "Waiting for the backend..."
     for try in $(seq 1 45); do
-        if curl -fsS -o /dev/null http://localhost:5002/health; then
+        if curl -fsS -o /dev/null http://localhost:5002/health 2>/dev/null; then
             break
         fi
         if [ "$try" -eq 45 ]; then
