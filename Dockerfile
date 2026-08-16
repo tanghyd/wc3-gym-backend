@@ -34,6 +34,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 # any number of workers in this container, and for one container per
 # database. See the migration section of README.md to serve from more.
 #
-# During debugging, this entry point will be overridden. uvicorn has no
-# worker timeout, so the long import/export requests need no --timeout.
+# uvicorn has no worker timeout, so the long import/export requests need
+# no --timeout.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn --factory app.main:create_app --host 0.0.0.0 --port 5002"]
