@@ -14,18 +14,18 @@ import difflib
 import enum
 import numbers
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import BeforeValidator, PlainSerializer
 
 from app.models.enums import Race
 
 
-def _enum_to_value(value: Any) -> Any:
+def _enum_to_value(value: object) -> object:
     return value.value if isinstance(value, enum.Enum) else value
 
 
-def _none_to_list(value: Any) -> Any:
+def _none_to_list(value: object) -> object:
     if value is None:
         return []
     if isinstance(value, list):
@@ -33,19 +33,19 @@ def _none_to_list(value: Any) -> Any:
     return value
 
 
-def _num_to_str(value: Any) -> Any:
+def _num_to_str(value: object) -> object:
     # These ABCs also match the numpy scalars the xlsx import passes.
     if isinstance(value, bool):
         return value
     if isinstance(value, numbers.Integral):
         return str(int(value))
     if isinstance(value, numbers.Real):
-        value = float(value)
-        return str(int(value)) if value.is_integer() else str(value)
+        number = float(value)
+        return str(int(number)) if number.is_integer() else str(number)
     return value
 
 
-def _lenient_date(value: Any) -> Any:
+def _lenient_date(value: object) -> object:
     # Runs before pydantic's strict date parsing.
     if value == "":
         return None
@@ -60,11 +60,11 @@ def _lenient_date(value: Any) -> Any:
     return value
 
 
-def _empty_str_to_none(value: Any) -> Any:
+def _empty_str_to_none(value: object) -> object:
     return None if value == "" else value
 
 
-def _suggest_race(value: Any) -> Any:
+def _suggest_race(value: object) -> object:
     # Clients send near misses: HUMAN for HU, ORC for OC, Random for RANDOM.
     if not isinstance(value, str):
         return value
@@ -78,7 +78,7 @@ def _suggest_race(value: Any) -> Any:
     raise ValueError(f"'{value}' is not a race. Valid races are {known}.")
 
 
-def _round_to_int(value: Any) -> Any:
+def _round_to_int(value: object) -> object:
     # The w3champions API returns fractions for integer columns.
     if isinstance(value, float) and not value.is_integer():
         return round(value)

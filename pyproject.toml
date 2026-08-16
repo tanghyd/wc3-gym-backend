@@ -49,8 +49,5 @@ ignore = [
     "TRY401",  # redundant exception object in logging.exception
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"app/models/types.py" = ["ANN401"]  # any type
-
 [tool.pytest]
 testpaths = ["tests"]
