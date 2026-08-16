@@ -21,11 +21,11 @@ from pydantic import BeforeValidator, PlainSerializer
 from app.models.enums import Race
 
 
-def _enum_to_value(value: object) -> object:
+def _enum_to_value[T](value: T) -> str | T:
     return value.value if isinstance(value, enum.Enum) else value
 
 
-def _none_to_list(value: object) -> object:
+def _none_to_list[T](value: T) -> list | T:
     if value is None:
         return []
     if isinstance(value, list):
@@ -33,7 +33,7 @@ def _none_to_list(value: object) -> object:
     return value
 
 
-def _num_to_str(value: object) -> object:
+def _num_to_str[T](value: T) -> str | T:
     # These ABCs also match the numpy scalars the xlsx import passes.
     if isinstance(value, bool):
         return value
@@ -45,7 +45,7 @@ def _num_to_str(value: object) -> object:
     return value
 
 
-def _lenient_date(value: object) -> object:
+def _lenient_date[T](value: T) -> date | None | T:
     # Runs before pydantic's strict date parsing.
     if value == "":
         return None
@@ -60,11 +60,11 @@ def _lenient_date(value: object) -> object:
     return value
 
 
-def _empty_str_to_none(value: object) -> object:
+def _empty_str_to_none[T](value: T) -> T | None:
     return None if value == "" else value
 
 
-def _suggest_race(value: object) -> object:
+def _suggest_race[T](value: T) -> T:
     # Clients send near misses: HUMAN for HU, ORC for OC, Random for RANDOM.
     if not isinstance(value, str):
         return value
@@ -78,7 +78,7 @@ def _suggest_race(value: object) -> object:
     raise ValueError(f"'{value}' is not a race. Valid races are {known}.")
 
 
-def _round_to_int(value: object) -> object:
+def _round_to_int[T](value: T) -> int | T:
     # The w3champions API returns fractions for integer columns.
     if isinstance(value, float) and not value.is_integer():
         return round(value)
