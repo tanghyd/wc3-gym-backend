@@ -304,9 +304,3 @@ The tests run against a temporary SQLite file and need no database server
 and no environment variables. The suite builds that file with
 `alembic upgrade head`, the way a deployment does, so every run checks the
 migrations as well. See `tests/conftest.py` for the design rules.
-
-## Additional Resources
-
-- [Backend Architecture Guide](.github/copilot-instructions.md)
-- [Database Migration Guide](db_scripts/DOCKER_IMPORT_GUIDE.md)
-- [Stats Workflow](STATS_WORKFLOW.md)
