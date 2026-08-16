@@ -265,7 +265,6 @@ backend/
 ├── Dockerfile             # Docker image definition
 ├── justfile               # The everyday commands
 ├── .env                   # Committed configuration that is not secret
-├── db_scripts/            # Hand-run SQL. Alembic owns the schema, not this
 ├── tests/                 # pytest suite
 ├── app/
 │   ├── main.py            # The application factory, create_app
