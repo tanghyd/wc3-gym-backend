@@ -28,6 +28,7 @@ from app.api.deps import AuthError
 from app.api.main import api_router
 from app.core.db import init_engine
 from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.logging import LOG_FORMAT, RequestLogMiddleware, request_id_filter
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,12 @@ def create_app(db_url: str | None = None) -> FastAPI:
     load_dotenv()
     # A wrong LOG_LEVEL must not stop the application.
     logging.basicConfig(
-        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format=LOG_FORMAT,
     )
+    # The format reads request_id, so every handler must have the filter.
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(request_id_filter)
 
     init_engine(db_url)
 
@@ -68,6 +73,7 @@ def create_app(db_url: str | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RequestLogMiddleware)
 
     @app.exception_handler(NotFoundError)
     async def not_found(request: Request, exc: NotFoundError) -> JSONResponse:
