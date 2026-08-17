@@ -187,8 +187,8 @@ def public_create_user(
     if existing_users and len(existing_users) > 0:
         # update first matched user
         existing = existing_users[0]
-        user_dto = UserCreate(**user_payload)
-        user = user_service.update_user(existing.id, user_dto)
+        user_create = UserCreate(**user_payload)
+        user = user_service.update_user(existing.id, user_create)
     else:
         # create new user
         user = user_service.create_user(UserCreate(**user_payload))
