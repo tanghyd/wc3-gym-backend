@@ -49,5 +49,5 @@ ignore = [
     "TRY401",  # redundant exception object in logging.exception
 ]
 
-[tool.pytest.ini_options]
+[tool.pytest]
 testpaths = ["tests"]
