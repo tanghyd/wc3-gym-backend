@@ -2,7 +2,7 @@
 name = "app"
 version = "1.0.0"
 description = "FastAPI backend for the GNL (Gym Newbie League) esports platform"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "requests",
     "gspread",
@@ -49,5 +49,5 @@ ignore = [
     "TRY401",  # redundant exception object in logging.exception
 ]
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["tests"]
