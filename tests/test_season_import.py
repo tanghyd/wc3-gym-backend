@@ -1,9 +1,7 @@
 """POST /import writes a whole season from one workbook.
 
-The pipeline used to log every failure and return None, so the route
-answered "Season imported successfully" over a season it had not
-written. The synchronous path now raises, and the caller reads the error
-envelope.
+The route runs the pipeline synchronously. It answers the season it
+wrote, or an error envelope when the pipeline raises.
 """
 
 import io
