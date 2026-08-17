@@ -31,6 +31,9 @@ TEAM_ICON = b"\x89PNG\r\n\x1a\npublic-contract-test"
 # The w3champions season the shortcodes select w3c_stats rows by.
 WC3_SEASON = 20
 
+# The scheduled time tests/seed.py inserts; the PHP splits it on 'T', '-' and ':'.
+SERIES_DATE_TIME = "2026-01-07T19:00:00"
+
 
 @pytest.fixture
 def public_seed(app: FastAPI) -> dict[str, Any]:
@@ -155,6 +158,23 @@ def public_seed(app: FastAPI) -> dict[str, Any]:
             ]
         )
 
+        # A second team drafts nobody, so the empty draft list is proved.
+        empty_team = FantasyTeam(
+            name="The Undrafted",
+            season_id=ids["season_id"],
+            captain_id=ids["player_ids"][2],
+            drafted_team_id=ids["team_b_id"],
+            drafted_race=Race.NE,
+            player_points=0,
+            bench_points=0,
+            team_points=0,
+            race_points=0,
+            bet_points=0,
+            total_points=0,
+        )
+        session.add(empty_team)
+        session.flush()
+
         stats = session.query(PlayerCareerStats).all()
         for rating, stat in enumerate(stats, start=1):
             stat.rating = 1200 + rating
@@ -164,6 +184,7 @@ def public_seed(app: FastAPI) -> dict[str, Any]:
 
         ids["season_2_id"] = season_2.id
         ids["coach_id"] = coach.id
+        ids["empty_fantasy_team_id"] = empty_team.id
         session.commit()
 
     return ids
@@ -240,6 +261,10 @@ def test_teams_season_carries_the_standings_and_roster_fields(
         assert "final_score" in info
         assert "points_available" in info
         assert "points_against" in info
+        # The values differ per season, so equality also proves the season row.
+        assert info["final_score"] == 6
+        assert info["points_available"] == 12
+        assert info["points_against"] == 4
         # Both maps are keyed by season id, not by position.
         assert isinstance(team["player_by_season"], dict)
         assert isinstance(team["coaches_by_season"], dict)
@@ -310,12 +335,16 @@ def test_team_image_serves_an_image(
 # gnl-detailed-standings
 
 
-def test_season_carries_number_weeks(
+def test_season_carries_number_weeks_and_the_list_fields(
     client: Client, public_seed: dict[str, Any]
 ) -> None:
     season = get_json(client, f"/seasons/{public_seed['season_id']}")
     assert "number_weeks" in season
     assert season["number_weeks"] is not None
+    # Both fields read as a list, never as null.
+    assert isinstance(season["maps"], list)
+    assert isinstance(season["user_signup"], list)
+    assert season["user_signup"] == []
 
 
 def test_matches_search_carries_the_standings_fields(
@@ -335,6 +364,10 @@ def test_matches_search_carries_the_standings_fields(
         assert match["playday"] is not None
         assert match["team1_id"] is not None
         assert match["team2_id"] is not None
+    # The standings add the scores up, so pin the seeded result.
+    seeded = next(m for m in matches if m["id"] == public_seed["match_id"])
+    assert seeded["team1_score"] == 2
+    assert seeded["team2_score"] == 1
 
 
 # gnl-week-series
@@ -368,9 +401,9 @@ def test_series_by_season_and_playday_carries_the_week_table_fields(
         assert entry["match_id"] is not None
         for side in ("player1", "player2"):
             assert entry[side]["name"]
-    # The week table groups on a scheduled time.
+    # The week table groups on a scheduled time and parses that exact format.
     scheduled = next(s for s in series if s["date_time"] is not None)
-    assert scheduled["date_time"]
+    assert scheduled["date_time"] == SERIES_DATE_TIME
 
 
 # gnl-fantasy-teams, gnl-fantasy-leaderboard
@@ -404,12 +437,16 @@ def test_fantasy_teams_search_carries_the_draft_fields(
     teams = post_json(
         client, "/fantasy/teams/search", f"season_id=={public_seed['season_id']}"
     )
-    assert teams
+    assert len(teams) == 2
     for team in teams:
         assert isinstance(team["drafted_players"], list)
-        assert team["drafted_players"]
         for player in team["drafted_players"]:
             assert player["name"]
             assert player["discordTag"]
         assert team["drafted_team"]["name"]
         assert team["drafted_race"]
+    drafted = next(t for t in teams if t["id"] == public_seed["fantasy_team_id"])
+    assert len(drafted["drafted_players"]) == 2
+    # A team that drafted nobody reads as an empty list, never as null.
+    empty = next(t for t in teams if t["id"] == public_seed["empty_fantasy_team_id"])
+    assert empty["drafted_players"] == []
