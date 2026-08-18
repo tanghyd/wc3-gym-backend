@@ -60,12 +60,14 @@ class FantasyBetService(BaseService):
         with self.get_session() as session:
             result = []
             fbet = (
-                session.scalars(select(FantasyBet).options(*FantasyBet.eager_options()))
+                session.scalars(
+                    select(FantasyBet).options(*FantasyBet.list_eager_options())
+                )
                 .unique()
                 .all()
             )
             for single_fbet in fbet:
-                result.append(FantasyBetPublic.from_fantasy_bet(single_fbet))
+                result.append(FantasyBetPublic.from_fantasy_bet_reduced(single_fbet))
             return result
 
     def search(self, query: QueryElement | None) -> list[FantasyBetPublic]:
