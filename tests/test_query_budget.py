@@ -184,8 +184,9 @@ def test_fantasy_bets_list_costs_one_statement(league: dict[str, Any]) -> None:
     """The list carries no collection, so it needs no second statement."""
     service = FantasyBetService()
     with count_statements() as tally:
-        bets = service.getAll()
+        bets, total = service.getAll()
     assert len(bets) == 1
+    assert total is None
     assert bets[0].user.w3c_stats == []
     assert tally[0] == 1
 
