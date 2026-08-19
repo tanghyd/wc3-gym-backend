@@ -1,0 +1,9 @@
+#cloud-config
+# Installs Docker; the deploy script does everything else over SSH.
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+runcmd:
+  - usermod -aG docker gnl
+  - systemctl enable --now docker

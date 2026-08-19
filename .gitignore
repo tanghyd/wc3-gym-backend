@@ -169,4 +169,5 @@ cython_debug/
 .vscode/
 
 # Docker
-docker-compose*
+docker-compose*deploy/.env
+deploy/terraform/.terraform/
