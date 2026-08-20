@@ -11,6 +11,7 @@ from app.api.deps import (
     require_admin,
 )
 from app.core.exceptions import BadRequestError
+from app.core.ordering import SortOrder
 from app.core.query import QueryUtil
 from app.models.fantasy_bet import (
     FantasyBetCreate,
@@ -25,7 +26,6 @@ from app.models.fantasy_team import (
     FantasyTeamUpdate,
 )
 from app.services.fantasy_bets import BetSort
-from app.services.ordering import SortOrder
 
 logger = logging.getLogger(__name__)
 

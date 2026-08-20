@@ -7,11 +7,11 @@ from fastapi import APIRouter, Body, Depends, File, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.deps import StatsServiceDep, require_admin
+from app.core.ordering import SortOrder
 from app.models.player_career_stats import (
     PlayerCareerStatsUpdate,
 )
 from app.services.derived import CareerSort
-from app.services.ordering import SortOrder
 
 logger = logging.getLogger(__name__)
 

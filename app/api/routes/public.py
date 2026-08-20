@@ -17,13 +17,13 @@ from app.api.deps import (
     UserServiceDep,
 )
 from app.core.exceptions import BadRequestError
+from app.core.ordering import SortOrder
 from app.core.query import QueryUtil
 from app.models.fantasy_bet import FantasyBetCreate, FantasyBetUpdate
 from app.models.fantasy_team import FantasyTeamCreate, FantasyTeamUpdate
 from app.models.series import SeriesSort
 from app.models.user import UserCreate
 from app.services import player_series
-from app.services.ordering import SortOrder
 
 logger = logging.getLogger(__name__)
 

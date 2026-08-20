@@ -32,6 +32,7 @@ from sqlalchemy import case, func, or_, select, union_all
 from sqlalchemy.orm import Session, aliased
 
 from app.core import career, fantasy
+from app.core.ordering import SortOrder
 from app.core.scoring import DEFAULT_SYSTEM, max_points, points, points_case
 from app.models.fantasy_bet import FantasyBet, FantasyBetPublic
 from app.models.fantasy_team import FantasyTeamPublic
@@ -41,7 +42,6 @@ from app.models.season import Season
 from app.models.series import Series, SeriesPublic
 from app.models.team import TeamPublic
 from app.models.user import User, UserReduced
-from app.services.ordering import SortOrder
 
 type MatchScores = dict[int, tuple[int, int]]
 # score system, series per week and number of weeks, per season

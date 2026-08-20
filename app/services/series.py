@@ -6,6 +6,7 @@ from sqlalchemy.orm import aliased
 
 from app.core import fantasy
 from app.core.exceptions import NotFoundError
+from app.core.ordering import SortOrder, ordered
 from app.core.query import QueryElement, QueryUtil
 from app.models.match import Match
 from app.models.series import (
@@ -20,7 +21,6 @@ from app.models.user import User
 from app.models.user_team_season import UserTeamSeasonStatsPublic
 from app.services import derived
 from app.services.base import BaseService
-from app.services.ordering import SortOrder, ordered
 
 if TYPE_CHECKING:
     from app.services.users import UserService

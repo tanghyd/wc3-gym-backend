@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.base import ExecutableOption
 from sqlmodel import Field, Relationship, SQLModel
 
+from app.core.ordering import SortOrder, ordered
 from app.models.base import DBModel
 from app.models.match import Match, MatchPublic
 from app.models.types import IsoDateTime, NumToStr
 from app.models.user import User, UserPublic
-from app.services.ordering import SortOrder, ordered
 
 SeriesSort = Literal["date_time", "week", "id"]
 

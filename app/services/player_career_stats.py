@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 
+from app.core.ordering import SortOrder
 from app.models.player_career_stats import (
     PlayerCareerStats,
     PlayerCareerStatsPublic,
@@ -14,7 +15,6 @@ from app.models.user import User
 from app.services import derived
 from app.services.base import BaseService
 from app.services.derived import CareerSort
-from app.services.ordering import SortOrder
 
 logger = logging.getLogger(__name__)
 

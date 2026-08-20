@@ -5,6 +5,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.ordering import SortOrder, ordered
 from app.core.query import QueryElement, QueryUtil
 from app.models.fantasy_bet import (
     FantasyBet,
@@ -16,7 +17,6 @@ from app.models.series import Series
 from app.models.user import User
 from app.services import derived
 from app.services.base import BaseService
-from app.services.ordering import SortOrder, ordered
 
 if TYPE_CHECKING:
     from app.services.settings import SettingsService
