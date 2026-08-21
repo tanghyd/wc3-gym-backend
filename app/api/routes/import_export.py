@@ -18,7 +18,7 @@ from app.api.deps import (
     UserServiceDep,
     require_admin,
 )
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError
 from app.core.query import QueryUtil
 from app.models.enums import Race
 from app.models.fantasy_bet import FantasyBetCreate, FantasyBetUpdate
@@ -105,17 +105,15 @@ def export_season(
     series_service: SeriesServiceDep,
     fantasy_team_service: FantasyTeamServiceDep,
     fantasy_bet_service: FantasyBetServiceDep,
-    season_id: str | None = None,
+    season_id: int,
 ) -> Response:
-    """Export complete season data for migration.
+    """Export one season as an Excel workbook of nine sheets.
 
-    Export an Excel file with ALL season data (season, maps, teams, players,
-    matches, series).
+    The workbook holds the season row, its maps, teams, rostered players,
+    matches, series, fantasy teams, fantasy team players and fantasy bets.
     """
-    season_id = int(season_id)
+    # get_season raises NotFoundError, which answers 404
     season = season_service.get_season(season_id)
-    if not season:
-        raise NotFoundError(f"Season not found by id: {season_id}")
 
     workbook = openpyxl.Workbook()
     workbook.remove(workbook.active)
@@ -319,7 +317,7 @@ def export_season(
     q_string = f"season_id=={season_id}"
     query = QueryUtil.parseQuery(q_string)
     if query and query.elementA:
-        fantasy_teams = fantasy_team_service.search_fantasy_teams(query)
+        fantasy_teams, _ = fantasy_team_service.search_fantasy_teams(query)
         for fteam in fantasy_teams:
             drafted_race_value = (
                 fteam.drafted_race.value
@@ -486,7 +484,7 @@ def import_fantasy_teams(
             fteam_query = QueryUtil.parseQuery(fteam_q_string)
             if not fteam_query or not fteam_query.elementA:
                 raise Exception(f"No valid query found: {fteam_q_string}")
-            found_teams = fantasy_team_service.search_fantasy_teams(fteam_query)
+            found_teams, _ = fantasy_team_service.search_fantasy_teams(fteam_query)
             if found_teams and len(found_teams) == 1:
                 team = found_teams[0]
                 fantasy_team = fantasy_team_service.update_fantasy_team(

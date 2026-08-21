@@ -1,6 +1,7 @@
 import logging
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import NotFoundError
@@ -86,30 +87,35 @@ class FantasyTeamService(BaseService):
 
     def search(
         self, query: QueryElement | None, limit: int | None = None, offset: int = 0
-    ) -> list[FantasyTeamPublic]:
+    ) -> tuple[list[FantasyTeamPublic], int | None]:
+        """The matching teams and, when a page is asked for, the total count."""
         with self.get_session() as session:
             result = []
             filter = QueryUtil.convertQueryToDBFilter(FantasyTeam, query)
             if filter is None:
                 logger.debug(f"No fantasy team found by searchcriteria: {query}")
-                return result
+                return result, None
             # Eager load only the relations the response model reads
             statement = (
                 select(FantasyTeam).options(*self._reduced_options).where(filter)
             )
+            total = None
             if limit is not None or offset:
                 # Offset paging is deterministic only with a fixed order
+                total = session.scalar(
+                    select(func.count()).select_from(FantasyTeam).where(filter)
+                )
                 statement = statement.order_by(FantasyTeam.id).offset(offset)
                 if limit is not None:
                     statement = statement.limit(limit)
             fteams = session.scalars(statement).unique().all()
             if not fteams:
                 logger.debug(f"No fantasy team found by searchcriteria: {query}")
-                return result
+                return result, total
             for fteam in fteams:
                 result.append(FantasyTeamPublic.from_fantasy_team(fteam))
             derived.fill_fantasy_teams(session, result)
-            return result
+            return result, total
 
     def addPlayers(self, team_id: int, player_ids: list[int]) -> FantasyTeamPublic:
         with self.get_session() as session:
@@ -120,15 +126,12 @@ class FantasyTeamService(BaseService):
                 user = session.get(User, user_id)
                 if not user:
                     raise NotFoundError(f"User not found by id: {user_id}")
-                already_exists = (
-                    session.get(
-                        DBFantasyTeamPlayer,
-                        {"fantasy_team_id": fteam.id, "user_id": user.id},
-                    )
-                    is not None
-                )
-                if not already_exists:
-                    session.add(DBFantasyTeamPlayer(users=user, fantasy_team=fteam))
+                try:
+                    # The primary key decides: a duplicate link is already there
+                    with session.begin_nested():
+                        session.add(DBFantasyTeamPlayer(users=user, fantasy_team=fteam))
+                except IntegrityError:
+                    logger.debug(f"User {user_id} is already in fantasy team {team_id}")
             session.flush()
             public = FantasyTeamPublic.from_fantasy_team(fteam)
             derived.fill_fantasy_teams(session, [public])
@@ -181,7 +184,7 @@ class FantasyTeamService(BaseService):
 
     def search_fantasy_teams(
         self, query: QueryElement | None, limit: int | None = None, offset: int = 0
-    ) -> list[FantasyTeamPublic]:
+    ) -> tuple[list[FantasyTeamPublic], int | None]:
         return self.search(query, limit=limit, offset=offset)
 
     def addFantasyPlayers(self, team_id: int, players: list[int]) -> FantasyTeamPublic:

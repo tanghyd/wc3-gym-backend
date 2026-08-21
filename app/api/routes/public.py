@@ -17,9 +17,11 @@ from app.api.deps import (
     UserServiceDep,
 )
 from app.core.exceptions import BadRequestError
+from app.core.ordering import SortOrder
 from app.core.query import QueryUtil
 from app.models.fantasy_bet import FantasyBetCreate, FantasyBetUpdate
 from app.models.fantasy_team import FantasyTeamCreate, FantasyTeamUpdate
+from app.models.series import SeriesSort
 from app.models.user import UserCreate
 from app.services import player_series
 
@@ -34,9 +36,10 @@ _token_store: dict[str, dict[str, Any]] = {}
 def _cleanup_expired() -> None:
     # use timezone-aware UTC now
     now = datetime.now(UTC)
-    expired = [t for t, v in _token_store.items() if v["expires_at"] <= now]
+    # a snapshot and a pop, because a parallel request can drop a token
+    expired = [t for t, v in list(_token_store.items()) if v["expires_at"] <= now]
     for t in expired:
-        del _token_store[t]
+        _token_store.pop(t, None)
 
 
 @router.post("/public-access-helper", response_model=None)
@@ -113,8 +116,8 @@ def get_public_token(token: str) -> JSONResponse | dict[str, Any]:
 @router.delete("/public-token/{token}", response_model=None)
 def delete_public_token(token: str) -> JSONResponse | dict[str, Any]:
     """Remove a token after it has been used."""
-    if token in _token_store:
-        del _token_store[token]
+    # a pop, because two parallel deletes must not both find the token
+    if _token_store.pop(token, None) is not None:
         return {"status": "deleted"}
     return JSONResponse({"error": "not_found"}, status_code=404)
 
@@ -179,6 +182,10 @@ def public_create_user(
             status_code=400,
         )
 
+    # take the token here, because a pop lets only one parallel request continue
+    if _token_store.pop(token, None) is None:
+        return JSONResponse({"error": "token_not_found_or_expired"}, status_code=404)
+
     # Check for existing user by discord id or tag
     existing_users = user_service.find_by_discord_id_or_tag(
         str(entry.get("discord_id")), str(entry.get("discord_tag"))
@@ -205,12 +212,6 @@ def public_create_user(
     except Exception as we:
         logger.warning(f"W3C sync failed after signup for user {user.id}: {we}")
 
-    # consume the token
-    try:
-        _token_store.pop(token, None)
-    except Exception:
-        logger.exception("Failed to delete token after signup")
-
     # return created user
     if user:
         try:
@@ -229,8 +230,13 @@ def get_player_series(
     token: str | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 500,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: SeriesSort | None = None,
+    order: SortOrder = "asc",
 ) -> JSONResponse | dict[str, Any]:
-    """Get one page of a player's series for the dashboard view, at most 500."""
+    """Get one page of a player's series for the dashboard view, at most 500.
+
+    sort names the field the page is ordered by, and the series id breaks its ties.
+    """
     if not token:
         return JSONResponse({"error": "missing token"}, status_code=400)
 
@@ -255,7 +261,12 @@ def get_player_series(
             f"player1_id == {user.id} or player2_id == {user.id}"
         )
         series = series_service.searchForSeason(
-            entry.get("season_id"), query, limit=limit, offset=offset
+            entry.get("season_id"),
+            query,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            order=order,
         )
         total = series_service.countForSeason(entry.get("season_id"), query)
     else:
@@ -263,7 +274,9 @@ def get_player_series(
         query = QueryUtil.parseQuery(
             f"player1_id == {user.id} or player2_id == {user.id}"
         )
-        series = series_service.search(query, limit=limit, offset=offset)
+        series = series_service.search(
+            query, limit=limit, offset=offset, sort=sort, order=order
+        )
         total = series_service.count(query)
 
     response.headers["X-Total-Count"] = str(total)
@@ -440,7 +453,7 @@ def create_fantasy_team(
     team_query = QueryUtil.parseQuery(
         f"captain_id == {user.id} and season_id == {season_id}"
     )
-    existing_teams = fantasy_team_service.search_fantasy_teams(team_query)
+    existing_teams, _ = fantasy_team_service.search_fantasy_teams(team_query)
 
     team_data = {
         "name": data.get(

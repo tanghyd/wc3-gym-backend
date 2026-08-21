@@ -7,9 +7,11 @@ from fastapi import APIRouter, Body, Depends, File, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.deps import StatsServiceDep, require_admin
+from app.core.ordering import SortOrder
 from app.models.player_career_stats import (
     PlayerCareerStatsUpdate,
 )
+from app.services.derived import CareerSort
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +25,18 @@ def get_all_career_stats(
     limit: Annotated[int, Query(ge=1, le=500)] = 500,
     offset: Annotated[int, Query(ge=0)] = 0,
     search: str = "",
+    sort: CareerSort | None = None,
+    order: SortOrder = "asc",
 ) -> list[dict[str, Any]]:
     """Retrieve one page of career statistics, at most 500, ordered by rating.
 
     search keeps the rows whose player name or user name holds it, without
     case. The header counts the kept rows.
+
+    sort names the field the rows are ordered by, and the id breaks its ties.
     """
     stats, total = service.get_all_career_stats(
-        limit=limit, offset=offset, search=search
+        limit=limit, offset=offset, search=search, sort=sort, order=order
     )
     response.headers["X-Total-Count"] = str(total)
     return [stat.to_dict() for stat in stats]

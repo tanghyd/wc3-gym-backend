@@ -13,10 +13,15 @@ One test is xfail(strict=True) on the defect it pins. A fix turns it XPASS and f
 the run, so the marker goes with the fix.
 """
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
 from httpx2 import Client
+
+from app.api.deps import ttl_cache
+from app.services.teams import TeamService
 
 # The admin routes a season passes through, for the auth guard test.
 GUARDED_WRITES = [
@@ -511,6 +516,78 @@ def test_a_write_without_a_token_is_refused(
 ) -> None:
     resp = client.request(method, path)
     assert resp.status_code == 401
+
+
+# The W3C sync. It reads an external service once for each player of the
+# team, so one request must run it one time.
+
+
+def test_a_w3c_sync_request_runs_the_sync_one_time(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def counted(self: TeamService, team_id: int, season_id: int) -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(TeamService, "syncW3CStatsTeam", counted)
+    ttl_cache.clear()  # The rate limit marker lives for the whole process
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert calls == 1
+
+
+def test_a_second_w3c_sync_request_during_the_first_answers_429(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stamp is written before the sync, so a request that arrives
+    while the sync runs is the one the stamp turns away."""
+    started = threading.Event()
+    release = threading.Event()
+
+    def held(self: TeamService, team_id: int, season_id: int) -> None:
+        started.set()
+        release.wait(timeout=5)
+
+    monkeypatch.setattr(TeamService, "syncW3CStatsTeam", held)
+    ttl_cache.clear()
+    url = f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}"
+
+    with ThreadPoolExecutor(1) as pool:
+        first = pool.submit(client.post, url, headers=auth_headers)
+        assert started.wait(timeout=5)
+        second = client.post(url, headers=auth_headers)
+        release.set()
+        assert first.result().status_code == 200
+    assert second.status_code == 429
+
+
+def test_a_failed_w3c_sync_leaves_no_stamp(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing(self: TeamService, team_id: int, season_id: int) -> None:
+        raise RuntimeError("W3Champions is down")
+
+    monkeypatch.setattr(TeamService, "syncW3CStatsTeam", failing)
+    ttl_cache.clear()
+    url = f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}"
+
+    assert client.post(url, headers=auth_headers).status_code == 500
+    assert ttl_cache == {}
 
 
 # The race column. The five members are RANDOM, HU, OC, NE and UD, and
