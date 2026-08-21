@@ -272,6 +272,8 @@ def process_import(
     # ===== Step 6: Import Series =====
     df_series = sheets["Series"]
     series_id_mapping = {}  # old_id -> new_id
+    # One statement for the series already stored, so the loop needs none
+    stored_series = series_service.series_ids_of_matches(match_id_mapping.values())
     for _, row in df_series.iterrows():
         if (
             pd.isna(row["Match ID"])
@@ -332,21 +334,19 @@ def process_import(
             except Exception:
                 pass
 
-        # Check if series already exists
-        q_string = f"match_id=={new_match_id} and player1_id=={new_player1_id} and player2_id=={new_player2_id}"
-        query = QueryUtil.parseQuery(q_string)
-        if query and query.elementA:
-            existing_series = series_service.search(query)
-            if existing_series:
-                series_service.update_series(
-                    existing_series[0].id, SeriesUpdate(**series_data)
-                )
-                if old_series_id:
-                    series_id_mapping[old_series_id] = existing_series[0].id
-            else:
-                series = series_service.create_series(SeriesCreate(**series_data))
-                if old_series_id:
-                    series_id_mapping[old_series_id] = series.id
+        key = (new_match_id, new_player1_id, new_player2_id)
+        stored = stored_series.get(key)
+        if stored:
+            new_series_id = stored[0]
+            series_service.update_series(new_series_id, SeriesUpdate(**series_data))
+        else:
+            new_series_id = series_service.create_series(
+                SeriesCreate(**series_data)
+            ).id
+            # A later row of the same file must find the series this one made
+            stored_series[key] = [new_series_id]
+        if old_series_id:
+            series_id_mapping[old_series_id] = new_series_id
 
     # ===== Step 7: Import Fantasy Teams =====
     fantasy_team_id_mapping = {}  # old_id -> new_id
