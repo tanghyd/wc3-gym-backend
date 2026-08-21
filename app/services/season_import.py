@@ -340,9 +340,7 @@ def process_import(
             new_series_id = stored[0]
             series_service.update_series(new_series_id, SeriesUpdate(**series_data))
         else:
-            new_series_id = series_service.create_series(
-                SeriesCreate(**series_data)
-            ).id
+            new_series_id = series_service.create_series(SeriesCreate(**series_data)).id
             # A later row of the same file must find the series this one made
             stored_series[key] = [new_series_id]
         if old_series_id:
