@@ -333,3 +333,22 @@ def test_bad_koth_input_answers_400(
     )
     assert resp.status_code == 400
     assert "Winner team number" in resp.json()["error"]
+
+
+def test_an_admin_signup_without_the_w3c_season_answers_400(
+    client: Client,
+    auth_headers: dict[str, str],
+    koth: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Neither the setting row nor the environment names the season, so the
+    admin reads what is missing instead of Internal Server Error."""
+    monkeypatch.delenv("CURRENT_WC3_SEASON", raising=False)
+
+    resp = client.post(
+        "/koth/signups/admin",
+        headers=auth_headers,
+        json={"twitch_username": "player_three", "battle_tag": "P3#3333"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["error"] == "Current W3C season not configured"
