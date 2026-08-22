@@ -233,10 +233,13 @@ class KothService(BaseService):
         w3c_name = battle_tag
 
         current_season = self._get_current_w3c_season()
+        w3c_url = self._get_w3c_url()
         for season_offset in range(2):
             season = current_season - season_offset
             try:
-                stats = self._get_w3c_stats_for_season(w3c_service, battle_tag, season)
+                stats = self._get_w3c_stats_for_season(
+                    w3c_service, w3c_url, battle_tag, season
+                )
                 if stats:
                     for stat in stats:
                         if stat.mmr and stat.mmr > 0:
@@ -604,12 +607,9 @@ class KothService(BaseService):
 
         raise BadRequestError("Current W3C season not configured")
 
-    def _get_w3c_stats_for_season(
-        self, w3c_service: W3CService, battle_tag: str, season: int
-    ) -> list["W3CStatsCreate"]:
-        """Get W3C stats for a specific season"""
+    def _get_w3c_url(self) -> str:
+        """Get the W3C players API base from settings or environment"""
         import os
-        import urllib.parse
 
         w3c_url = None
         if self.settings_app_service:
@@ -623,6 +623,13 @@ class KothService(BaseService):
 
         if not w3c_url:
             raise BadRequestError("W3C URL not configured")
+        return w3c_url
+
+    def _get_w3c_stats_for_season(
+        self, w3c_service: W3CService, w3c_url: str, battle_tag: str, season: int
+    ) -> list["W3CStatsCreate"]:
+        """Get W3C stats for a specific season"""
+        import urllib.parse
 
         param = {"gateWay": 20, "season": season}
 
