@@ -182,9 +182,10 @@ class UserService(BaseService):
             logger.warning(f"No W3C season to sync {user.battleTag} against: {e}")
             raise
 
+        seasons = (current_season, current_season - 1)
         all_stats = []
         refusals: list[Exception] = []
-        for season in (current_season, current_season - 1):
+        for season in seasons:
             try:
                 stats = w3c_service.getPlayerStats(
                     user.battleTag, season_override=season
@@ -199,9 +200,9 @@ class UserService(BaseService):
                 )
                 refusals.append(e)
 
-        # A player w3champions answered for in neither season is a failed sync,
-        # not a silent one: the caller reports the reason.
-        if not all_stats and refusals:
+        # A season that answers nothing is an unranked player, so only a sync
+        # w3champions refused for every season is a failure the caller reports.
+        if len(refusals) == len(seasons):
             raise refusals[0]
 
         # One transaction reads and writes the rows of this player, so no

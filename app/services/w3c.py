@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import requests
 
-from app.core.exceptions import BadRequestError, NotFoundError, W3CThrottledError
+from app.core.exceptions import NotFoundError, W3CThrottledError
 from app.models.enums import Race
 from app.models.w3c_stats import W3CStatsCreate
 
@@ -111,8 +111,9 @@ class W3CService:
             params=param,
         )
         if not result:
+            # A season the player did not play is an empty answer, not a failure
             logger.debug(f"no stats found for player {bnet_name} on w3c")
-            raise BadRequestError(f"No stats found for player {bnet_name} on W3C")
+            return []
         stats: list[W3CStatsCreate] = []
         for gmode_stats in result:
             if gmode_stats.get("gameMode") and gmode_stats.get("gameMode") == 1:

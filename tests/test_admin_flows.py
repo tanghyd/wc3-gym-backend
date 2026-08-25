@@ -636,6 +636,34 @@ def test_a_w3c_sync_names_the_player_it_could_not_update(
     assert "404" in body["failed"][0]["reason"]
 
 
+def test_a_player_w3champions_has_no_rows_for_is_synced(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unranked player is a sync that wrote nothing, not a failure."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+    monkeypatch.setattr(
+        W3CService,
+        "getPlayerStats",
+        lambda self, bnet_name, season_override=None: [],
+    )
+    ttl_cache.clear()
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "synced": seeded["player_ids"][:2],
+        "skipped": [],
+        "failed": [],
+    }
+
+
 def test_a_throttled_w3c_answers_502(
     client: Client,
     auth_headers: dict[str, str],
