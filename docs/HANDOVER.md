@@ -40,7 +40,7 @@ Staging: `http://gnl-staging.northcentralus.cloudapp.azure.com/` runs both `stag
 
 ## Work in flight
 
-**W3C sync optimisation** — started 2026-08-25, in progress on the backend fork. Branch `fix/w3c-sync-reports-failures` is the first of four planned PRs. What it changes, so a reviewer is not surprised:
+**W3C sync optimisation** — started 2026-08-25, in progress on the backend fork. PR A is open as `tanghyd/wc3-gym-backend#138`; PR B is being built on top of it. Four PRs in all. What they change, so a reviewer is not surprised:
 
 | PR | Branch | Change |
 |---|---|---|
