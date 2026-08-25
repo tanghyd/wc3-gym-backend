@@ -2,17 +2,6 @@
 
 FastAPI REST API for the GNL (Gym Newbie League) esports platform providing JWT-authenticated endpoints for user management, team operations, match scheduling, series tracking, and fantasy betting.
 
-## Documentation
-
-| Page | Covers |
-|---|---|
-| [docs/HANDOVER.md](docs/HANDOVER.md) | where everything is, the order to do things in, work in flight |
-| [docs/CHANGES.md](docs/CHANGES.md) | what changed since the Flask app, by theme |
-| [docs/CODEBASE-GUIDE.md](docs/CODEBASE-GUIDE.md) | layout, request flow, models, derived values, auth, tests |
-| [docs/LOCAL-TESTING.md](docs/LOCAL-TESTING.md) | running backend and admin frontend on one machine |
-| [docs/DATABASE-MIGRATION.md](docs/DATABASE-MIGRATION.md) | the Alembic chain, the production procedure, rehearsal, rollback |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | production deploy and rollback |
-
 ## Prerequisites
 
 - **uv** - [Install uv](https://docs.astral.sh/uv/getting-started/installation/) - manages the Python version, the virtual environment, and the dependencies; new to uv? See the [getting started guide](https://docs.astral.sh/uv/getting-started/)
@@ -241,7 +230,7 @@ Both commands need the network that reaches MySQL, and both need `DB_URL` in the
 
 `gnl-backend:local` stands in for the image here because this repository builds no other. A deployment substitutes its own image name.
 
-This is where the deployment differs from the official FastAPI template, which runs `alembic upgrade head` from a `prestart` step of its own and leaves the container command as the server alone. That shape is the right destination. Today there is no compose file and no deploy pipeline in this repository — CI runs lint and tests and publishes the image — so the single `docker run` carries both, and the commands above are what splitting them looks like by hand. See `docs/DEPLOYMENT.md` for the compose shape a deployment uses.
+This is where the deployment differs from the official FastAPI template, which runs `alembic upgrade head` from a `prestart` step of its own and leaves the container command as the server alone. That shape is the right destination. Today there is no compose file and no deploy pipeline in this repository — CI runs lint and tests and publishes the image — so the single `docker run` carries both, and the commands above are what splitting them looks like by hand.
 
 ## Troubleshooting
 
@@ -283,7 +272,6 @@ backend/
 ├── justfile               # The everyday commands
 ├── .env                   # Committed configuration that is not secret
 ├── tests/                 # pytest suite
-├── docs/                  # Handover, codebase guide, local testing, deployment, migration
 ├── app/
 │   ├── main.py            # The application factory, create_app
 │   ├── api/
@@ -304,8 +292,6 @@ backend/
 ├── alembic.ini            # Alembic configuration
 └── migrations/            # Schema migrations
 ```
-
-`docs/CODEBASE-GUIDE.md` walks through these directories.
 
 The server calls the factory, so nothing builds an application at import:
 `uvicorn --factory app.main:create_app`.
