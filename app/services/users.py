@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import joinedload, noload
 
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError, NotFoundError, W3CThrottledError
 from app.core.query import QueryElement, QueryUtil
 from app.models.season import Season
 from app.models.team import Team
@@ -180,9 +180,10 @@ class UserService(BaseService):
             current_season = w3c_service.current_season()
         except Exception as e:
             logger.warning(f"No W3C season to sync {user.battleTag} against: {e}")
-            return
+            raise
 
         all_stats = []
+        refusals: list[Exception] = []
         for season in (current_season, current_season - 1):
             try:
                 stats = w3c_service.getPlayerStats(
@@ -190,10 +191,18 @@ class UserService(BaseService):
                 )
                 if stats:
                     all_stats.extend(stats)
+            except W3CThrottledError:
+                raise
             except Exception as e:
                 logger.warning(
                     f"Failed to fetch season {season} W3C stats for {user.battleTag}: {e}"
                 )
+                refusals.append(e)
+
+        # A player w3champions answered for in neither season is a failed sync,
+        # not a silent one: the caller reports the reason.
+        if not all_stats and refusals:
+            raise refusals[0]
 
         # One transaction reads and writes the rows of this player, so no
         # other sync can insert between the read and the write.
