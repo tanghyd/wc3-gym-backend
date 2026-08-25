@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable
 from typing import NamedTuple
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from app.core.db import Session
@@ -78,9 +78,15 @@ def _by_key[K, V](values: Iterable[V], key: Callable[[V], K]) -> dict[K, list[V]
     return grouped
 
 
+def _folded(value: object) -> object:
+    """The key a lookup matches on. Text folds to lower case, so a form
+    entry finds the stored row whatever the case it was typed in."""
+    return value.strip().lower() if isinstance(value, str) else value
+
+
 def _column(rows: list[pd.Series], index: int) -> set[object]:
-    """The values one column of the sheet holds, without its empty cells."""
-    return {value for row in rows if (value := cell_value(row.iloc[index]))}
+    """The keys one column of the sheet holds, without its empty cells."""
+    return {_folded(value) for row in rows if (value := cell_value(row.iloc[index]))}
 
 
 def _season_id(
@@ -108,17 +114,23 @@ def _drafts(
     """Read every row of the team sheet: its captain, its GNL team, its race
     and its eight drafted players. A captain on no roster is created."""
     by_tag = _by_key(
-        session.scalars(select(User).where(User.discordTag.in_(_column(rows, 1)))),
-        lambda user: user.discordTag,
+        session.scalars(
+            select(User).where(func.lower(User.discordTag).in_(_column(rows, 1)))
+        ),
+        lambda user: _folded(user.discordTag),
     )
-    names = {name for row in rows for name in row.iloc[2:10] if cell_value(name)}
+    names = {
+        _folded(name) for row in rows for name in row.iloc[2:10] if cell_value(name)
+    }
     by_name = _by_key(
-        session.scalars(select(User).where(User.name.in_(names))),
-        lambda user: user.name,
+        session.scalars(select(User).where(func.lower(User.name).in_(names))),
+        lambda user: _folded(user.name),
     )
     teams = _by_key(
-        session.scalars(select(Team).where(Team.name.in_(_column(rows, 10)))),
-        lambda team: team.name,
+        session.scalars(
+            select(Team).where(func.lower(Team.name).in_(_column(rows, 10)))
+        ),
+        lambda team: _folded(team.name),
     )
     drafts: list[Draft] = []
     captains: list[User] = []
@@ -127,7 +139,7 @@ def _drafts(
         tag = cell_value(row.iloc[1])
         if not tag:
             raise BadRequestError(f"Team without captain: {name}")
-        found_users = by_tag.get(tag, [])
+        found_users = by_tag.get(_folded(tag), [])
         if len(found_users) > 1:
             raise BadRequestError(
                 f"No or multiple users found for captain[{tag}]: {found_users}"
@@ -146,12 +158,12 @@ def _drafts(
                 ).model_dump()
             )
             captains.append(captain)
-            by_tag[tag] = [captain]
+            by_tag[_folded(tag)] = [captain]
 
         team_name = cell_value(row.iloc[10])
         if not team_name:
             raise BadRequestError(f"No GNL team defined for team: {name}")
-        found_teams = teams.get(team_name, [])
+        found_teams = teams.get(_folded(team_name), [])
         if len(found_teams) != 1:
             raise BadRequestError(
                 f"No or multiple teams found for gnl team name[{team_name} ]: {found_teams}"
@@ -174,7 +186,7 @@ def _drafts(
         for cell in row.iloc[2:10]:
             if not cell:
                 raise BadRequestError(f"Player missing for team: {name}")
-            found_players = by_name.get(cell, [])
+            found_players = by_name.get(_folded(cell), [])
             if len(found_players) != 1:
                 raise BadRequestError(f"Could not find player by name: {cell}")
             players.append(found_players[0])
@@ -265,13 +277,13 @@ def _fantasy_matches(
 
     names = _column(rows, 1) | _column(rows, 2)
     by_name = _by_key(
-        session.scalars(select(User).where(User.name.in_(names))),
-        lambda user: user.name,
+        session.scalars(select(User).where(func.lower(User.name).in_(names))),
+        lambda user: _folded(user.name),
     )
     for row in rows:
         players = []
         for index in (1, 2):
-            found = by_name.get(cell_value(row.iloc[index]), [])
+            found = by_name.get(_folded(cell_value(row.iloc[index])), [])
             if len(found) != 1:
                 raise BadRequestError(
                     f"No or multiple users found for bet player[{row.iloc[1]}]: {found}"
@@ -308,12 +320,16 @@ def _bets(
     and pick."""
     rows = _rows(frame)
     by_tag = _by_key(
-        session.scalars(select(User).where(User.discordTag.in_(_column(rows, 1)))),
-        lambda user: user.discordTag,
+        session.scalars(
+            select(User).where(func.lower(User.discordTag).in_(_column(rows, 1)))
+        ),
+        lambda user: _folded(user.discordTag),
     )
     by_name = _by_key(
-        session.scalars(select(User).where(User.name.in_(_column(rows, 2)))),
-        lambda user: user.name,
+        session.scalars(
+            select(User).where(func.lower(User.name).in_(_column(rows, 2)))
+        ),
+        lambda user: _folded(user.name),
     )
     stored = _by_key(
         session.scalars(select(FantasyBet).where(FantasyBet.season_id == season_id)),
@@ -325,7 +341,7 @@ def _bets(
     for row in rows:
         if not cell_value(row.iloc[1]):
             raise BadRequestError(f"Captain not defined: {row.iloc[1]}")
-        found = by_tag.get(cell_value(row.iloc[1]), [])
+        found = by_tag.get(_folded(cell_value(row.iloc[1])), [])
         if len(found) != 1:
             raise BadRequestError(
                 f"No or multiple users found for captain[{row.iloc[1]}]: {found}"
@@ -334,7 +350,7 @@ def _bets(
 
         if not cell_value(row.iloc[2]):
             raise BadRequestError(f"Bet Player not defined: {row.iloc[2]}")
-        found = by_name.get(cell_value(row.iloc[2]), [])
+        found = by_name.get(_folded(cell_value(row.iloc[2])), [])
         if len(found) != 1:
             raise BadRequestError(
                 f"No or multiple users found for bet player[{row.iloc[2]}]: {found}"

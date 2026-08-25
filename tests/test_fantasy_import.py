@@ -177,6 +177,80 @@ def test_the_import_creates_a_captain_it_cannot_find(
     assert team.captain_id == captain.id
 
 
+# A Google Form entry is typed by hand, so a lookup folds the case of the
+# text it matches on. MySQL collated the per-row queries that way.
+
+
+def test_a_captain_matches_a_discord_tag_in_another_case(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    """The sheet says "P1", the database says "p1", and no second user is
+    written for the same captain."""
+    row: list[Any] = ["Night Owls", " P1 ", *DRAFTED, "Alpha", "Orc"]
+
+    response = client.post(
+        "/fantasy/import/teams",
+        params={"season_id": str(seeded["season_id"])},
+        files={"file": ("teams.xlsx", _teams_sheet([row]), "application/vnd.ms-excel")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    with Session() as session:
+        team = session.scalars(
+            select(FantasyTeam).where(FantasyTeam.name == "Night Owls")
+        ).one()
+        assert team.captain_id == seeded["player_ids"][0]
+        assert len(session.scalars(select(User)).all()) == len(seeded["player_ids"])
+
+
+def test_a_drafted_player_matches_a_name_in_another_case(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    """The sheet says "p1", the database says "P1"."""
+    drafted = [name.lower() for name in DRAFTED]
+    row: list[Any] = ["Night Owls", "p1", *drafted, "Alpha", "Orc"]
+
+    response = client.post(
+        "/fantasy/import/teams",
+        params={"season_id": str(seeded["season_id"])},
+        files={"file": ("teams.xlsx", _teams_sheet([row]), "application/vnd.ms-excel")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    with Session() as session:
+        team = session.scalars(
+            select(FantasyTeam).where(FantasyTeam.name == "Night Owls")
+        ).one()
+        drafted_ids = {player.user_id for player in team.drafted_players}
+    assert drafted_ids == set(seeded["player_ids"])
+
+
+def test_a_drafted_team_matches_a_name_in_another_case(
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
+) -> None:
+    """The sheet says "alpha", the database says "Alpha"."""
+    row: list[Any] = ["Night Owls", "p1", *DRAFTED, "alpha", "Orc"]
+
+    response = client.post(
+        "/fantasy/import/teams",
+        params={"season_id": str(seeded["season_id"])},
+        files={"file": ("teams.xlsx", _teams_sheet([row]), "application/vnd.ms-excel")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    with Session() as session:
+        team = session.scalars(
+            select(FantasyTeam).where(FantasyTeam.name == "Night Owls")
+        ).one()
+    assert team.drafted_team_id == seeded["team_a_id"]
+
+
 def test_a_team_sheet_the_import_cannot_read_writes_nothing(
     client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
 ) -> None:
