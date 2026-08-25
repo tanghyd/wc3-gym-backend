@@ -6,6 +6,7 @@ read misses a row another writer put there, the insert that follows hits
 the constraint and the service updates that row instead of failing.
 """
 
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from app.core.db import Session
 from app.models.enums import Race
+from app.models.user import User
 from app.models.user_team_season import DBUserTeamSeason, UserTeamSeasonStatsPublic
 from app.models.w3c_stats import W3CStats, W3CStatsCreate
 from app.services.users import UserService
@@ -31,14 +33,24 @@ def stats(mmr: int, race: Race = Race.HU, season: int = SEASON) -> W3CStatsCreat
 
 
 def answer_w3c(monkeypatch: pytest.MonkeyPatch, reply: list[W3CStatsCreate]) -> None:
-    """The w3champions call answers this list, so no test needs a network."""
+    """The w3champions calls answer from here, so no test needs a network.
+
+    The season comes from w3champions too when no setting names one, so the
+    sync asks for both of them."""
 
     def getPlayerStats(
         self: W3CService, bnet_name: str, season_override: int | None = None
     ) -> list[W3CStatsCreate]:
         return list(reply)
 
+    monkeypatch.setattr(W3CService, "current_season", lambda self: SEASON)
     monkeypatch.setattr(W3CService, "getPlayerStats", getPlayerStats)
+
+
+def stamped_at(user_id: int) -> datetime | None:
+    """When the last sync of this player reached w3champions."""
+    with Session() as session:
+        return session.get(User, user_id).w3c_synced_at
 
 
 def rows_of(user_id: int) -> list[W3CStats]:
@@ -62,6 +74,8 @@ def test_a_second_sync_updates_the_row_and_adds_none(
     first = rows_of(user_id)
     assert [(r.race, r.wc3_season, r.mmr) for r in first] == [(Race.HU, SEASON, 1500)]
 
+    first_stamp = stamped_at(user_id)
+
     answer_w3c(monkeypatch, [stats(mmr=1600)])
     UserService().updateW3CStats_ById(user_id)
     second = rows_of(user_id)
@@ -69,6 +83,8 @@ def test_a_second_sync_updates_the_row_and_adds_none(
     assert len(second) == len(first)
     assert second[0].id == first[0].id
     assert second[0].mmr == 1600
+    # Every sync that reached w3champions moves the stamp
+    assert stamped_at(user_id) > first_stamp
 
 
 def test_one_sync_writes_one_row_per_race_and_season(

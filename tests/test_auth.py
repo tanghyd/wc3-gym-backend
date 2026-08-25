@@ -26,6 +26,18 @@ def test_login_with_bad_token(client: Client) -> None:
     assert resp.json() == {"error": "Bad admin token"}
 
 
+def test_login_without_a_token_field(client: Client) -> None:
+    resp = client.post("/login", json={"admin_token": "test-admin-token"})
+    assert resp.status_code == 422
+    assert "error" in resp.json()
+
+
+def test_login_with_an_empty_body(client: Client) -> None:
+    resp = client.post("/login", json={})
+    assert resp.status_code == 422
+    assert "error" in resp.json()
+
+
 def test_guarded_route_without_token(client: Client) -> None:
     resp = client.get("/config/koth/nightbot-token")
     assert resp.status_code == 401
@@ -52,6 +64,11 @@ def test_team_w3c_sync_needs_a_token(client: Client, seeded: dict[str, Any]) -> 
     resp = client.post(
         f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}"
     )
+    assert resp.status_code == 401
+
+
+def test_season_w3c_sync_needs_a_token(client: Client, seeded: dict[str, Any]) -> None:
+    resp = client.post(f"/seasons/{seeded['season_id']}/w3c_sync")
     assert resp.status_code == 401
 
 

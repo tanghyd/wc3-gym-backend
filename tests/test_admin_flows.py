@@ -15,13 +15,27 @@ the run, so the marker goes with the fix.
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+import requests
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from httpx2 import Client
+from sqlalchemy import update
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.deps import ttl_cache
-from app.services.teams import TeamService
+from app.core.db import Session
+from app.core.exceptions import W3CThrottledError
+from app.models.enums import Race
+from app.models.user import User, UserCreate, UserListPublic
+from app.models.w3c_stats import W3CStatsCreate
+from app.services.users import UserService
+from app.services.w3c import THROTTLED_MESSAGE, W3CService
+
+# The w3champions season the sync tests answer for.
+W3C_SEASON = 21
 
 # The admin routes a season passes through, for the auth guard test.
 GUARDED_WRITES = [
@@ -518,76 +532,415 @@ def test_a_write_without_a_token_is_refused(
     assert resp.status_code == 401
 
 
-# The W3C sync. It reads an external service once for each player of the
-# team, so one request must run it one time.
+# The W3C sync. It reads an external service twice for each player of the
+# team, so the players run in parallel and every one of them is reported.
 
 
-def test_a_w3c_sync_request_runs_the_sync_one_time(
+def stamped_at(user_id: int) -> datetime | None:
+    """When the last sync of this player reached w3champions."""
+    with Session() as session:
+        return session.get(User, user_id).w3c_synced_at
+
+
+def stamp(user_id: int, minutes_ago: float) -> None:
+    with Session() as session:
+        session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(
+                w3c_synced_at=datetime.now(UTC).replace(tzinfo=None)
+                - timedelta(minutes=minutes_ago)
+            )
+        )
+        session.commit()
+
+
+def answer_no_stats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """W3Champions answers for the season and holds no rows for the player."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+    monkeypatch.setattr(
+        W3CService,
+        "getPlayerStats",
+        lambda self, bnet_name, season_override=None: [],
+    )
+
+
+def make_players(count: int) -> list[UserListPublic]:
+    """More players than the pool has workers, so a throttle finds futures
+    that never started."""
+    service = UserService()
+    return [
+        service.add(
+            UserCreate(
+                name=f"T{i}",
+                battleTag=f"T{i}#{i}000",
+                discordTag=f"t{i}",
+                discordId=str(1000 + i),
+                race=Race.HU,
+            )
+        )
+        for i in range(count)
+    ]
+
+
+def test_a_w3c_sync_names_the_player_it_could_not_update(
     client: Client,
     auth_headers: dict[str, str],
     seeded: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = 0
+    """A BattleTag w3champions does not know is one entry in failed, and the
+    rest of the team still syncs."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
 
-    def counted(self: TeamService, team_id: int, season_id: int) -> None:
-        nonlocal calls
-        calls += 1
+    def player_stats(
+        self: W3CService, bnet_name: str, season_override: int | None = None
+    ) -> list[W3CStatsCreate]:
+        if bnet_name == "P2#2222":
+            raise Exception("Request failed with status code 404: player not found")
+        return [
+            W3CStatsCreate(wc3_season=season_override, race=Race.HU, mmr=1500, games=20)
+        ]
 
-    monkeypatch.setattr(TeamService, "syncW3CStatsTeam", counted)
-    ttl_cache.clear()  # The rate limit marker lives for the whole process
+    monkeypatch.setattr(W3CService, "getPlayerStats", player_stats)
 
     resp = client.post(
         f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
         headers=auth_headers,
     )
+
     assert resp.status_code == 200
-    assert calls == 1
+    body = resp.json()
+    assert body["synced"] == [seeded["player_ids"][0]]
+    assert body["skipped"] == []
+    assert [(f["name"], f["battleTag"]) for f in body["failed"]] == [("P2", "P2#2222")]
+    assert "404" in body["failed"][0]["reason"]
 
 
-def test_a_second_w3c_sync_request_during_the_first_answers_429(
+def test_a_player_w3champions_has_no_rows_for_is_synced(
     client: Client,
     auth_headers: dict[str, str],
     seeded: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The stamp is written before the sync, so a request that arrives
-    while the sync runs is the one the stamp turns away."""
+    """An unranked player is a sync that wrote nothing, not a failure."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+    monkeypatch.setattr(
+        W3CService,
+        "getPlayerStats",
+        lambda self, bnet_name, season_override=None: [],
+    )
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "synced": seeded["player_ids"][:2],
+        "skipped": [],
+        "failed": [],
+    }
+
+
+def test_a_throttled_w3c_answers_502_on_the_single_player_route(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One player carries no report, so the throttle is the answer itself."""
+
+    class Refused:
+        status_code = 429
+        headers: dict[str, str] = {}
+        text = "Too Many Requests"
+
+    def refuse(
+        self: requests.Session, method: str, url: str, **kwargs: object
+    ) -> Refused:
+        return Refused()
+
+    monkeypatch.setattr(requests.Session, "request", refuse)
+
+    resp = client.post(
+        f"/users/w3c_sync/{seeded['player_ids'][0]}", headers=auth_headers
+    )
+
+    assert resp.status_code == 502
+    assert resp.json() == {"error": THROTTLED_MESSAGE}
+
+
+def test_a_throttle_reaches_the_caller_of_the_player_sync(
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-player sync logs a failed season and carries on, so the throttle
+    needs its own way out."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+
+    def throttled(
+        self: W3CService, bnet_name: str, season_override: int | None = None
+    ) -> list[W3CStatsCreate]:
+        raise W3CThrottledError(THROTTLED_MESSAGE)
+
+    monkeypatch.setattr(W3CService, "getPlayerStats", throttled)
+    service = UserService()
+    user = service.get(seeded["player_ids"][0])
+
+    with pytest.raises(W3CThrottledError):
+        service.updateW3CStats(user)
+
+
+def test_the_players_of_a_team_sync_at_the_same_time(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The barrier meets only when both players are inside w3champions at
+    once. A serial sync holds the first one there until the barrier breaks."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+    meet = threading.Barrier(2, timeout=5)
+
+    def player_stats(
+        self: W3CService, bnet_name: str, season_override: int | None = None
+    ) -> list[W3CStatsCreate]:
+        if season_override == W3C_SEASON:
+            meet.wait()
+        return []
+
+    monkeypatch.setattr(W3CService, "getPlayerStats", player_stats)
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["synced"] == seeded["player_ids"][:2]
+    assert meet.broken is False
+
+
+def test_a_player_synced_minutes_ago_is_skipped_and_a_stale_one_is_synced(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The button skips what another admin just refreshed, and the skipped
+    row keeps the stamp it had."""
+    answer_no_stats(monkeypatch)
+    fresh, stale = seeded["player_ids"][:2]
+    stamp(fresh, minutes_ago=5)
+    stamp(stale, minutes_ago=11)
+    before = stamped_at(fresh)
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"synced": [stale], "skipped": [fresh], "failed": []}
+    assert stamped_at(fresh) == before
+    assert stamped_at(stale) > before
+
+
+def test_a_sync_that_finds_no_stats_still_stamps_the_player(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stamp separates an unranked player from one nobody ever synced."""
+    answer_no_stats(monkeypatch)
+    assert [stamped_at(p) for p in seeded["player_ids"][:2]] == [None, None]
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert all(stamped_at(p) is not None for p in seeded["player_ids"][:2])
+
+
+def test_one_players_database_failure_leaves_the_others_synced(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reason reaches the admin without the statement the database named."""
+    answer_no_stats(monkeypatch)
+    real = UserService.updateW3CStats
+
+    def one_bad(self: UserService, user: UserListPublic) -> None:
+        if user.battleTag == "P2#2222":
+            raise SQLAlchemyError("INSERT INTO w3cstats (user_id) VALUES (2)")
+        real(self, user)
+
+    monkeypatch.setattr(UserService, "updateW3CStats", one_bad)
+    synced, failed = seeded["player_ids"][:2]
+
+    resp = client.post(
+        f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["synced"] == [synced]
+    assert body["failed"] == [
+        {"id": failed, "name": "P2", "battleTag": "P2#2222", "reason": "Database error"}
+    ]
+    assert stamped_at(synced) is not None
+    assert stamped_at(failed) is None
+
+
+def test_a_second_w3c_sync_during_the_first_answers_200(
+    app: FastAPI,
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing turns a request away any more, so two admins both get a report."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
     started = threading.Event()
     release = threading.Event()
 
-    def held(self: TeamService, team_id: int, season_id: int) -> None:
+    def player_stats(
+        self: W3CService, bnet_name: str, season_override: int | None = None
+    ) -> list[W3CStatsCreate]:
         started.set()
         release.wait(timeout=5)
+        return []
 
-    monkeypatch.setattr(TeamService, "syncW3CStatsTeam", held)
-    ttl_cache.clear()
+    monkeypatch.setattr(W3CService, "getPlayerStats", player_stats)
     url = f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}"
 
-    with ThreadPoolExecutor(1) as pool:
-        first = pool.submit(client.post, url, headers=auth_headers)
+    # One client in one context, so both requests share the server thread pool
+    with TestClient(app) as c, ThreadPoolExecutor(2) as pool:
+        token = c.post("/login", json={"token": "test-admin-token"}).json()
+        headers = {"Authorization": f"Bearer {token['access_token']}"}
+        first = pool.submit(c.post, url, headers=headers)
         assert started.wait(timeout=5)
-        second = client.post(url, headers=auth_headers)
+        second = pool.submit(c.post, url, headers=headers)
         release.set()
-        assert first.result().status_code == 200
-    assert second.status_code == 429
+        answers = [first.result().status_code, second.result().status_code]
+
+    assert answers == [200, 200]
 
 
-def test_a_failed_w3c_sync_leaves_no_stamp(
+def test_a_throttle_stops_the_pool_and_names_the_players_it_left(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The players already written keep their stamp; the rest read as failed
+    with the throttle as the reason."""
+    monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+    players = make_players(8)
+    first = players[0].battleTag
+
+    def player_stats(
+        self: W3CService, bnet_name: str, season_override: int | None = None
+    ) -> list[W3CStatsCreate]:
+        if bnet_name == first:
+            return [
+                W3CStatsCreate(
+                    wc3_season=season_override, race=Race.HU, mmr=1500, games=20
+                )
+            ]
+        raise W3CThrottledError(THROTTLED_MESSAGE)
+
+    monkeypatch.setattr(W3CService, "getPlayerStats", player_stats)
+
+    result = UserService().syncW3CStatsUsers(players, timedelta(0))
+
+    assert result.synced == [players[0].id]
+    assert [f.id for f in result.failed] == [p.id for p in players[1:]]
+    assert {f.reason for f in result.failed} == {THROTTLED_MESSAGE}
+    assert stamped_at(players[0].id) is not None
+    assert [stamped_at(p.id) for p in players[1:]] == [None] * 7
+
+
+# The season sync. One request covers every player signed up for the season,
+# where the assign view used to send one request per player from the browser.
+
+
+def sign_up(
+    client: Client, headers: dict[str, str], season_id: int, user_ids: list[int]
+) -> None:
+    post(client, headers, f"/seasons/addUserSignup/{season_id}", {"user_ids": user_ids})
+
+
+def test_a_season_sync_reports_every_player_signed_up(
     client: Client,
     auth_headers: dict[str, str],
     seeded: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def failing(self: TeamService, team_id: int, season_id: int) -> None:
-        raise RuntimeError("W3Champions is down")
+    """The signups of the season, not the roster of one team."""
+    answer_no_stats(monkeypatch)
+    signed_up = seeded["player_ids"][:3]
+    sign_up(client, auth_headers, seeded["season_id"], signed_up)
 
-    monkeypatch.setattr(TeamService, "syncW3CStatsTeam", failing)
-    ttl_cache.clear()
-    url = f"/teams/w3c_sync/{seeded['team_a_id']}/seasons/{seeded['season_id']}"
+    resp = client.post(f"/seasons/{seeded['season_id']}/w3c_sync", headers=auth_headers)
 
-    assert client.post(url, headers=auth_headers).status_code == 500
-    assert ttl_cache == {}
+    assert resp.status_code == 200
+    body = resp.json()
+    assert sorted(body["synced"]) == sorted(signed_up)
+    assert body["skipped"] == []
+    assert body["failed"] == []
+
+
+def test_a_season_nobody_signed_up_for_syncs_nothing(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty report, not an error, so the button reads the same either way."""
+    answer_no_stats(monkeypatch)
+
+    resp = client.post(f"/seasons/{seeded['season_id']}/w3c_sync", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json() == {"synced": [], "skipped": [], "failed": []}
+
+
+def test_a_season_sync_of_an_unknown_season_answers_404(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+) -> None:
+    resp = client.post("/seasons/9999/w3c_sync", headers=auth_headers)
+
+    assert resp.status_code == 404
+    assert resp.json() == {"error": "Season not found"}
+
+
+def test_a_second_season_sync_skips_the_players_the_first_stamped(
+    client: Client,
+    auth_headers: dict[str, str],
+    seeded: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A double click costs no w3champions call."""
+    answer_no_stats(monkeypatch)
+    signed_up = seeded["player_ids"][:3]
+    sign_up(client, auth_headers, seeded["season_id"], signed_up)
+    url = f"/seasons/{seeded['season_id']}/w3c_sync"
+    assert client.post(url, headers=auth_headers).status_code == 200
+
+    resp = client.post(url, headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["synced"] == []
+    assert sorted(body["skipped"]) == sorted(signed_up)
+    assert body["failed"] == []
 
 
 # The race column. The five members are RANDOM, HU, OC, NE and UD, and

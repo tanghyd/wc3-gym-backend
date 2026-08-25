@@ -79,7 +79,7 @@ settings_service = SettingsService()
 user_service = UserService(settings_app_service=settings_service)
 team_service = TeamService(user_app_service=user_service)
 match_service = MatchService()
-season_service = SeasonService()
+season_service = SeasonService(user_app_service=user_service)
 series_service = SeriesService(user_app_service=user_service)
 draft_series_service = DraftSeriesService()
 map_service = MapService()
@@ -93,9 +93,6 @@ fantasy_score_service = FantasyScoreService(
 )
 koth_service = KothService(settings_app_service=settings_service)
 stats_service = PlayerCareerStatsService()
-
-# 24-hour markers per process, e.g. the per-team W3C sync rate limit
-ttl_cache: dict[str, float] = {}
 
 
 def get_settings_service() -> SettingsService:

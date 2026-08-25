@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 from sqlalchemy import ColumnElement, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, noload, selectinload
 
 from app.core.exceptions import BadRequestError, NotFoundError
@@ -12,9 +12,10 @@ from app.models.team import Team, TeamCreate, TeamPublic, TeamUpdate
 from app.models.team_season import DBTeamSeason
 from app.models.user import User
 from app.models.user_team_season import DBUserTeamSeason
+from app.models.w3c_stats import W3CSyncResult
 from app.services import derived
 from app.services.base import BaseService
-from app.services.users import UserService
+from app.services.users import SYNC_MAX_AGE, UserService
 
 logger = logging.getLogger(__name__)
 
@@ -251,9 +252,6 @@ class TeamService(BaseService):
             QueryUtil.convertQueryToDBFilter(Team, query), limit=limit, offset=offset
         )
 
-    def find_by_name(self, name: str) -> list[TeamPublic]:
-        return self._where(Team.name == name)
-
     def _where(
         self,
         filter: ColumnElement[bool] | None,
@@ -437,31 +435,7 @@ class TeamService(BaseService):
                 result.append(team_data)
         return result
 
-    def syncW3CStatsTeam(self, team_id: int, season_id: int) -> TeamPublic:
+    def syncW3CStatsTeam(self, team_id: int, season_id: int) -> W3CSyncResult:
         team = self.get_team_season(team_id, season_id)
-        users = team.player_by_season.get(season_id)
-        sync_errors: list[str] = []
-
-        if users:
-            for u in users:
-                try:
-                    self.user_app_service.updateW3CStats(u)
-                except Exception as e:
-                    # The error list goes to the client, so it stays fixed
-                    reason = (
-                        "Database error" if isinstance(e, SQLAlchemyError) else str(e)
-                    )
-                    error_msg = f"Failed to sync W3C stats for user {u.name} (BattleTag: {u.battleTag}): {reason}"
-                    sync_errors.append(error_msg)
-                    print(error_msg)  # Log to console
-
-        # Return the updated team data even if some players failed
-        result = self.get_team_season(team_id, season_id)
-
-        # If there were errors, log them but don't fail the whole operation
-        if sync_errors:
-            print(
-                f"W3C sync completed with {len(sync_errors)} error(s) for team {team_id}"
-            )
-
-        return result
+        users = team.player_by_season.get(season_id) or []
+        return self.user_app_service.syncW3CStatsUsers(users, SYNC_MAX_AGE)
