@@ -22,3 +22,8 @@ jobs:
           docker build -t "$image:staging" -t "$image:sha-$sha" .
           docker push "$image:staging"
           docker push "$image:sha-$sha"
+      - name: Build and push the backup tool
+        run: |
+          image=ghcr.io/tanghyd/gnl-db-backup
+          docker build -t "$image:latest" deploy/backup
+          docker push "$image:latest"

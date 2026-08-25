@@ -1,6 +1,6 @@
 # Production deployment guide
 
-Production is one VM with Docker: a MySQL 5.7 container, the backend container, the admin frontend container, and a reverse proxy that serves the frontend at `/` and the backend at `/api`. The database is the system of record and is never rebuilt. This page covers the first deployment of the FastAPI backend onto that box and every deployment after it.
+Production is one VM with Docker, managed through Portainer: a MySQL 5.7 container, the backend container, the admin frontend container, and a reverse proxy that serves the frontend at `/` and the backend at `/api`. The database is the system of record and is never rebuilt. This page covers the first deployment of the FastAPI backend onto that box and every deployment after it.
 
 Read [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md) before the first deployment. The backend container migrates the database when it starts.
 
@@ -74,32 +74,14 @@ The Python and JS SDKs (`api_framework`, `api_framework_js`) need no action. Not
 
 ## 3. The deployment itself
 
-This is the staging shape; production mirrors it. `infra/box/compose.yaml` in the workspace is the reference compose file and `infra/box/nginx.conf` the reference proxy.
+Production is operated through Portainer: no shell on the VM, only the stack editor, the container list, container logs and a console into a running container. The stack is a compose file that Portainer holds. Its exact text is not in any repository yet; the first step of the first deploy is to copy it out of Portainer (Stacks → the stack → Editor) and commit it to this repository under `deploy/`, so it is versioned from then on. `infra/box/compose.yaml` in Daniel's workspace is the staging equivalent and shows the shape: mysql, backend, frontend, a proxy that serves `/api`.
 
-```sh
-# 1. Pin the images
-#    In the compose file, or in its .env if it reads ${BACKEND_IMAGE} / ${FRONTEND_IMAGE}
-BACKEND_IMAGE=ghcr.io/tanghyd/gnl-backend:sha-81b2913d
-FRONTEND_IMAGE=ghcr.io/tanghyd/gnl-admin-frontend:sha-a8ec5612
+Steps, all in Portainer:
 
-# 2. Check what compose will actually run. Do this every time.
-docker compose config | grep 'image:'
-
-# 3. Pull and restart the two app services only. MySQL and the proxy stay up.
-docker compose pull backend frontend
-docker compose up -d frontend
-docker compose up -d backend
-
-# 4. Watch the migration and the start
-docker compose logs -f backend
-#    Expect the Running upgrade lines on the first deploy, then:
-#    INFO:     Application startup complete.
-
-# 5. Verify
-curl -fsS http://localhost:5002/health
-docker compose exec backend alembic current
-docker stats --no-stream
-```
+1. **Dump the database first** on a release that carries a migration (section 4 of [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md)). The first FastAPI deploy carries eight.
+2. **Stacks → the stack → Editor.** Set the frontend image to the new tag, then the backend image to the new tag. Pin a `sha-` tag, never `latest`. Update the stack with "Re-pull image" on. MySQL and the proxy keep running if their lines did not change.
+3. **Containers → backend → Logs.** On a release with a migration, expect the `Running upgrade` lines, then `INFO: Application startup complete`. On a release without one, just the startup line. A container that restarts in a loop means the migration failed: **stop**, copy the log, go to section 4.
+4. **Verify.** `https://<backend host>/health` answers `{"status":"ok"}`. Console into the backend container and run `alembic current` (expect the head revision named in the release). Containers → Stats shows the backend's memory.
 
 Then in a browser, hard-refresh the admin app (Ctrl+F5) and open the career, fantasy and standings pages. Compare against the screens saved before the dump.
 
@@ -110,15 +92,13 @@ Post-deploy checks that prove the new code is live:
 - `GET /users` carries an `X-Total-Count` header.
 - The admin app shows no recalculate buttons.
 
-Memory: the backend sits around 100 to 150 MiB at rest on staging, 250 MiB under 40 concurrent requests. If `docker stats` shows much more, tell Daniel.
+Memory: the backend sits around 100 to 150 MiB at rest on staging, 250 MiB under 40 concurrent requests. If Portainer shows much more, tell Daniel.
 
 ## 4. Rollback
 
-1. `docker compose stop backend`
-2. Restore the dump (section 6 of [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md)).
-3. Set both image tags back to the previous ones.
-4. `docker compose up -d`
-5. Verify against the saved screens.
+1. In the stack editor, set the backend **and** frontend image tags back to the previous ones. Update the stack.
+2. If the release carried a migration: stop the backend container and restore the dump with the restore container (section 6 of [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md)), then start the backend.
+3. Verify against the saved screens.
 
 Roll both services back together. The old frontend and the new backend do not agree on the series payload.
 
@@ -127,11 +107,15 @@ Roll both services back together. The old frontend and the new backend do not ag
 Once production is on the Alembic chain, a deployment is:
 
 1. Dump the database if the release carries a new file under `migrations/versions/`. Check with `git log --oneline <deployed-sha>..main -- migrations/versions`.
-2. Pin the new tags, `docker compose config | grep image:`, `pull`, `up -d`.
-3. `docker compose logs -f backend` until `Application startup complete`.
-4. `curl /health`.
+2. Stack editor: new tags, Update with re-pull.
+3. Backend log until `Application startup complete`.
+4. `/health`.
 
 A restart with no new migration logs no `Running upgrade` line. That is normal.
+
+### Automating it later
+
+Portainer gives each stack a webhook URL (Stacks → the stack → Webhooks). A call to it re-pulls the images and updates the stack. A GitHub Actions job that builds the image and then calls the webhook is a full deploy with no SSH, no IP allowlist and no shell; the webhook URL is the only secret and it lives in GitHub. The manual path above stays as it is, on the same stack file, for when the automation is not there. Not built yet; needs the stack file in the repository first.
 
 ## 6. Staging, for reference
 
@@ -142,6 +126,7 @@ The `just deploy` recipe does exactly the steps in section 3 plus two guards wor
 ## 7. Known gaps
 
 - No HTTPS on staging. Production terminates TLS somewhere we have not seen.
-- The production reverse-proxy config is not in any repository. Confirm it serves `/api` on the dashboard origin before the first deploy.
+- The production stack file (and with it the reverse-proxy config) is not in any repository. Copy it out of Portainer into `deploy/` first; confirm it serves `/api` on the dashboard origin.
+- `ghcr.io/tanghyd/gnl-db-backup` is built by CI on the next push to main and has not been run against a real database yet. Test it on staging before the production window.
 - The Discord bot has no deploy pipeline and its host is not recorded here.
 - Nothing builds a production image on merge. The GHCR `staging` images are the closest thing; pin them by `sha-` tag.

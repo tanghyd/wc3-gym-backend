@@ -81,27 +81,35 @@ Optional. Do it in the same window as the migration if you want autogenerate to 
 
 ## 4. Production procedure
 
+Production is operated through Portainer. The person deploying has no shell on the VM, only Portainer: container list, container logs, a console into a running container, and the stack editor. Every step below is done from those four places. Where a step needs a file to leave or enter the VM, a one-off container does it (Step 4 and section 6).
+
+Names used below and where to check them in Portainer: the stack (Stacks), the MySQL service name on the stack network (Stacks → the stack → Editor; `mysql` in this guide), the database name (`GYM_BACKEND` in this guide), the root password (`MYSQL_ROOT_PASSWORD` in the stack's environment). Substitute if production differs.
+
 Stop at any failed step. Do not retry a failed migration. Save the log and restore from the dump (section 6).
+
+### How to run SQL
+
+Containers → the MySQL container → Console → `/bin/sh` → Connect. Then:
+
+```sh
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" GYM_BACKEND
+```
+
+Every SQL block below is typed into that prompt. To save a result, copy the console output into a text file on your machine.
 
 ### Step 1 — check the facts
 
-On the production box, in the directory that holds the compose file:
-
-```sh
-docker compose ps
-docker compose exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" GYM_BACKEND -e "SELECT VERSION(); SHOW TABLES;"
-docker compose exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" GYM_BACKEND -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='GYM_BACKEND' AND table_name='alembic_version';"
-df -h
+```sql
+SELECT VERSION();
+SHOW TABLES;
+SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='GYM_BACKEND' AND table_name='alembic_version';
 ```
 
-Expect: version 5.7.8 or newer, all 21 tables, `0` for `alembic_version` (production has never run Alembic), and free disk for the dump (a few times the size of `/var/lib/mysql`).
-
-The database name is `GYM_BACKEND` throughout this guide. Substitute if production differs.
+Expect: version 5.7.8 or newer, all 21 tables from section 2, and `0` for `alembic_version` (production has never run Alembic).
 
 ### Step 2 — record the numbers before
 
-```sh
-docker compose exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" GYM_BACKEND -N -e "
+```sql
 SELECT 'users',COUNT(*) FROM users UNION ALL SELECT 'seasons',COUNT(*) FROM seasons
 UNION ALL SELECT 'teams',COUNT(*) FROM teams UNION ALL SELECT 'matches',COUNT(*) FROM matches
 UNION ALL SELECT 'series',COUNT(*) FROM series UNION ALL SELECT 'team_season',COUNT(*) FROM team_season
@@ -110,57 +118,74 @@ UNION ALL SELECT 'fantasy_teams',COUNT(*) FROM fantasy_teams
 UNION ALL SELECT 'fantasy_bets',COUNT(*) FROM fantasy_bets
 UNION ALL SELECT 'w3cstats',COUNT(*) FROM w3cstats
 UNION ALL SELECT 'koth_signups',COUNT(*) FROM koth_signups
-UNION ALL SELECT 'koth_signups_active',COUNT(*) FROM koth_signups WHERE is_active=1;" > before.txt
-cat before.txt
+UNION ALL SELECT 'koth_signups_active',COUNT(*) FROM koth_signups WHERE is_active=1;
 ```
 
-Also save a few screens from the public site and the admin app: the career table, one fantasy leaderboard, one standings page. The derived numbers must match them after.
+Save the output as `before.txt`. Also save a few screens from the public site and the admin app: the career table, one fantasy leaderboard, one standings page. The derived numbers must match them after.
 
 ### Step 3 — count what revision 7 will delete
 
-```sh
-docker compose exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" GYM_BACKEND -e "
+```sql
 SELECT COUNT(*) AS total,
        COUNT(*) - COUNT(DISTINCT CONCAT_WS('|',user_id,IFNULL(race,'~'),wc3_season)) AS rows_to_delete
-FROM w3cstats;"
+FROM w3cstats;
 ```
 
 Write the number down. After the migration, `w3cstats` must be smaller by exactly that many rows.
 
 ### Step 4 — dump the database (mandatory)
 
-```sh
-docker compose exec mysql sh -c \
-  'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers GYM_BACKEND' \
-  > gnl-prod-$(date +%F).sql
-tail -1 gnl-prod-*.sql     # must read: -- Dump completed
-ls -lh gnl-prod-*.sql      # must not be near zero
+The dump runs in a one-off container from the image `ghcr.io/tanghyd/gnl-db-backup:latest` (source: `deploy/backup/` in this repository, built by CI). It runs `mysqldump --single-transaction --routines --triggers`, checks the dump completed, gzips it and uploads it to a blob URL. Nothing is written to the VM.
+
+Before: Daniel creates a blob in his Azure storage account and sends a SAS URL with **write** permission, valid for one day.
+
+In Portainer: Containers → Add container.
+
+| Field | Value |
+|---|---|
+| Name | `gnl-db-backup` |
+| Image | `ghcr.io/tanghyd/gnl-db-backup:latest` |
+| Network (Advanced → Network) | the stack's network |
+| Env | `MYSQL_ROOT_PASSWORD` = the stack's root password |
+| Env | `DUMP_URL` = the SAS URL |
+| Env | `DB_HOST` = the MySQL service name, if it is not `mysql` |
+| Env | `DB_NAME` = the database name, if it is not `GYM_BACKEND` |
+| Restart policy | Never |
+
+Deploy the container. Open its log. Expect:
+
+```
+dumping GYM_BACKEND from mysql
+dump complete, <n> bytes gzipped
+uploading
+uploaded
 ```
 
-Copy the file off the VM. A dump on the same disk is not a backup.
+The container exits 0. If it exits non-zero the log names the reason (`dump did not complete`, or a curl error); fix and run again. Remove the container afterwards.
+
+Daniel confirms from his side that the blob exists, has a plausible size, and `gunzip -t` passes. Only then continue.
 
 This is a real database dump. The app's Excel export is not a substitute: it does not carry KOTH data, settings, team icons, career baselines or w3c stats, and it cannot be restored.
 
 ### Step 5 — run the migration by starting the new backend
 
-Follow [DEPLOYMENT.md](DEPLOYMENT.md) for the image and compose changes. Deploy the admin frontend first, then the backend. When the backend container starts:
+Follow [DEPLOYMENT.md](DEPLOYMENT.md): in the stack editor, set the admin frontend image tag, then the backend image tag, then Update the stack. The backend container runs `alembic upgrade head` as it starts.
 
-```sh
-docker compose logs -f backend
-```
+Containers → the backend container → Logs. Expect eight `Running upgrade` lines, `658616cf0c2b` first and `c4e1a9b72d50` last, then `Application startup complete`. Note how long it took. On staging with 18 seasons of data the chain ran in seconds.
 
-Expect eight `Running upgrade` lines, `658616cf0c2b` first and `c4e1a9b72d50` last, then `Application startup complete`. Time it. On staging with 18 seasons of data the chain ran in seconds.
-
-If any line reads `ERROR` or the container exits: **stop**. Save the full log. Go to section 6.
+If any line reads `ERROR` or the container keeps restarting: **stop**. Copy the full log. Go to section 6.
 
 ### Step 6 — verify
 
+Console into the backend container (`/bin/sh`):
+
 ```sh
-docker compose exec backend alembic current      # expect: c4e1a9b72d50 (head)
-curl -fsS http://localhost:5002/health           # expect: {"status":"ok"}
+alembic current      # expect: c4e1a9b72d50 (head)
 ```
 
-Re-run the Step 2 count block into `after.txt` and `diff before.txt after.txt`. The only allowed differences: `w3cstats` down by the Step 3 number, `koth_signups_active` down by any duplicate active signups. Every other count unchanged.
+In a browser: `https://<backend host>/health` answers `{"status":"ok"}`.
+
+In the MySQL console, run the Step 2 block again and save it as `after.txt`. Compare with `before.txt`. The only allowed differences: `w3cstats` down by the Step 3 number, `koth_signups_active` down by any duplicate active signups. Every other count unchanged.
 
 Spot checks:
 
@@ -178,9 +203,13 @@ Then compare the career table, fantasy leaderboard and standings against the scr
 
 Do this before the production window. It answers how long the migration takes and how many rows revision 7 deletes, on the real data.
 
-You need a dump file of production (Step 4 above, run on the box). Then on your machine:
+You need the dump blob from Step 4 above. Then on your machine:
 
 ```sh
+curl -fsS -o gnl-prod.sql.gz "<blob URL with read permission>"
+gunzip -t gnl-prod.sql.gz && gunzip -k gnl-prod.sql.gz
+tail -1 gnl-prod.sql            # must read: -- Dump completed
+
 docker network create gnl-net 2>/dev/null || true
 docker run -d --name gnl-mysql-prodcopy --network gnl-net -p 3307:3306 \
   -e MYSQL_ROOT_PASSWORD=root_password -e MYSQL_DATABASE=GYM_BACKEND \
@@ -188,7 +217,7 @@ docker run -d --name gnl-mysql-prodcopy --network gnl-net -p 3307:3306 \
   mysql:5.7.41
 until docker exec gnl-mysql-prodcopy mysqladmin ping -u gym_user -pgym_user --silent; do sleep 2; done
 
-docker exec -i gnl-mysql-prodcopy mysql -uroot -proot_password GYM_BACKEND < gnl-prod-<date>.sql
+docker exec -i gnl-mysql-prodcopy mysql -uroot -proot_password GYM_BACKEND < gnl-prod.sql
 ```
 
 Port 3307 keeps it apart from the normal local `gnl-mysql` on 3306.
@@ -239,16 +268,17 @@ Tear down: `docker rm -f gnl-backend-prodcopy gnl-mysql-prodcopy`.
 
 `alembic downgrade` restores structure only. It re-adds columns empty, and it cannot bring back the rows revision 7 deleted or the flags revision 8 changed. A migration that fails on its second `ALTER` leaves the first applied and `alembic_version` on the previous revision, which no downgrade repairs.
 
-So the rollback is the dump:
+So the rollback is the dump, loaded by the same image the other way:
 
-```sh
-docker compose stop backend
-docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" GYM_BACKEND' < gnl-prod-<date>.sql
-```
+1. In the stack editor, set the backend **and** frontend image tags back to the previous ones. Update the stack. Then stop the backend container (Containers → backend → Stop) so nothing writes during the restore.
+2. Daniel sends a SAS URL for the dump blob with **read** permission.
+3. Containers → Add container, as in Step 4, with these differences: name `gnl-db-restore`, Command `restore.sh` (Advanced → Command & logging → Command), and one more env `CONFIRM_RESTORE` = `yes`. Without that variable the container refuses to run.
+4. Open its log. Expect `restoring GYM_BACKEND on mysql`, `restored`, and the table list. The dump drops and recreates every table it holds.
+5. Start the backend container. Verify against the Step 2 screens. Remove the restore container.
 
-Then point the compose file back at the previous backend **and** frontend image tags and `docker compose up -d`. Rolling back only one of the two leaves the old frontend reading fields the new backend no longer sends, or the reverse.
+Roll both services back together. The old frontend and the new backend do not agree on the series payload.
 
-A dump taken before the migration has no `alembic_version` table, which is right: after a restore the database is back on the Flask schema and a later attempt replays the whole chain.
+A dump taken before the migration has no `alembic_version` table, which is right: after a restore the database is back on the Flask schema, and the old backend image does not run Alembic. A later attempt at the new image replays the whole chain.
 
 ## 7. Adding a migration later
 
