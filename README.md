@@ -155,6 +155,8 @@ What this changes against a MySQL stack of the original app:
 
 The import writes no ids of its own. A season matches by name, a player by battle tag, a team by name and a series by its match and its two players, so the Postgres sequences keep counting from the rows that are already stored.
 
+`tests/data/` holds the real S17 and S18 exports; `just seed` imports both into a running backend (S18 first, so shared players keep the newer attributes) and the suite round-trips them.
+
 Ten sheets travel. These tables do not: `settings`, `w3cstats`, `player_career_stats`, `user_season_signup`, `koth_events`, `koth_matches`, `koth_match_participants`, `koth_signups`, `draft_series`, and the `icon` column of `teams`. Carry those over another way.
 
 ## Project Setup
@@ -238,6 +240,7 @@ uv run just lint        # check formatting and lint, as CI runs them
 uv run just fmt         # apply the formatting and lint fixes
 uv run just db-status   # show the revision the database is on
 uv run just migrate     # bring a database up to date by hand
+uv run just seed        # import the S18 and S17 workbooks from tests/data
 uv run just revision    # write a migration for the current models
 ```
 
