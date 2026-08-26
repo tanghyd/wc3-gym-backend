@@ -49,7 +49,7 @@ def test_find_by_discord_id_treats_the_value_as_a_value(users: UserService) -> N
 
 
 def test_a_name_matches_in_any_case(users: UserService) -> None:
-    """MySQL's collation matched text case-insensitively, Postgres does not."""
+    """Postgres compares text case-sensitively, so the search folds both sides."""
     found = users.search(QueryUtil.parseQuery("name == grubby"))
 
     assert [user.name for user in found] == ["Grubby"]

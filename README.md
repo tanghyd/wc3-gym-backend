@@ -42,6 +42,28 @@ DB_URL="postgresql+psycopg://postgres.<ref>:<password>@aws-1-<region>.pooler.sup
 
 Port 5432 is the session pooler, which behaves like a direct connection and is the one to use for `alembic upgrade head` and for a long-lived server. Port 6543 is the transaction pooler for serverless functions; it needs `connect_args={"prepare_threshold": None}` in `init_engine`, which is not set today.
 
+## Deploying to Vercel
+
+Vercel serves `api/index.py`, which imports the same application the container runs. Set `DB_URL`, `JWT_SECRET_KEY`, `ADMIN_TOKEN`, `BOT_CLIENT_TOKEN` and `FRONTEND_URL` in the project settings; the deployment reads no `.env` file.
+
+A deploy runs no migration. Before you deploy a commit that carries one, run it by hand against the same database:
+
+```bash
+DB_URL="<pooler url>" uv run alembic upgrade head
+```
+
+Use the session pooler on port 5432 for that command and for `DB_URL` itself. Port 6543 is the transaction pooler; it needs `connect_args={"prepare_threshold": None}` in `init_engine`, which is not set, so a `DB_URL` on 6543 fails on the second request.
+
+A full-season `POST /import` takes longer than the Vercel function timeout. Import a season from a machine that runs the server itself, or against the pooler URL directly.
+
+## Season workbooks
+
+`POST /export` writes one season as an xlsx and `POST /import` reads it back. The pair is the migration path off the MySQL app: export each season there, import each here.
+
+The import writes no ids of its own. A season matches by name, a player by battle tag, a team by name and a series by its match and its two players, so the Postgres sequences keep counting from the rows that are already stored.
+
+Ten sheets travel. These tables do not: `settings`, `w3cstats`, `player_career_stats`, `user_season_signup`, `koth_events`, `koth_matches`, `koth_match_participants`, `koth_signups`, `draft_series`, and the `icon` column of `teams`. Carry those over another way.
+
 ## Project Setup
 
 ### 1. Clone Repository

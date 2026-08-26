@@ -139,7 +139,7 @@ class QueryUtil:
                 and isinstance(column.type, String | AutoString)
                 and not isinstance(column.type, Enum)
             ):
-                # MySQL's collation matched text case-insensitively, Postgres does not
+                # Postgres compares text case-sensitively, so both sides fold
                 column, value = func.lower(column), value.lower()
             if query.operator == "==":
                 filter = column == value
