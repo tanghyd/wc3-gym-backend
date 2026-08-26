@@ -3,10 +3,9 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Query, Request, Response, UploadFile
-from fastapi.responses import JSONResponse
 
 from app.api.deps import TeamServiceDep, require_admin
-from app.core.exceptions import BadRequestError
+from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.query import QueryUtil
 from app.models.team import TeamCreate, TeamPublic, TeamUpdate
 from app.models.w3c_stats import W3CSyncResult
@@ -24,7 +23,7 @@ router = APIRouter(tags=["teams"])
 )
 def add_team(data: TeamCreate, service: TeamServiceDep) -> TeamPublic:
     """Create a new team with the provided name."""
-    return service.create_team(data)
+    return service.add(data)
 
 
 @router.put(
@@ -34,7 +33,7 @@ def add_team(data: TeamCreate, service: TeamServiceDep) -> TeamPublic:
 )
 def update_team(team_id: int, data: TeamUpdate, service: TeamServiceDep) -> TeamPublic:
     """Update the name of an existing team."""
-    return service.update_team(team_id, data)
+    return service.update(team_id, data)
 
 
 @router.delete(
@@ -42,7 +41,7 @@ def update_team(team_id: int, data: TeamUpdate, service: TeamServiceDep) -> Team
 )
 def delete_team(team_id: int, service: TeamServiceDep) -> None:
     """Delete a team by its ID."""
-    service.delete_team(team_id)
+    service.delete(team_id)
 
 
 @router.get("/teams/basic")
@@ -58,7 +57,7 @@ def get_all_teams_basic(
 @router.get("/teams/{team_id}")
 def get_team(team_id: int, service: TeamServiceDep) -> TeamPublic:
     """Retrieve a team by its ID."""
-    return service.get_team(team_id)
+    return service.get(team_id)
 
 
 @router.get("/teams/{team_id}/seasons/{season_id}")
@@ -66,7 +65,7 @@ def get_team_season(
     team_id: int, season_id: int, service: TeamServiceDep
 ) -> TeamPublic:
     """Retrieve a team by its ID with all information related to a specific season"""
-    return service.get_team_season(team_id, season_id)
+    return service.get_with_nested_users_by_season(team_id, season_id)
 
 
 @router.get("/teams/season/{season_id}")
@@ -178,24 +177,24 @@ def upload_team_image(
     team_id: int,
     service: TeamServiceDep,
     image: Annotated[UploadFile | None, File()] = None,
-) -> JSONResponse:
+) -> dict[str, str]:
     """Allows a user to upload or modify a team's image stored in binary format"""
     if image is None:
-        return JSONResponse({"error": "No image provided"}, status_code=400)
+        raise BadRequestError("No image provided")
 
     file_data = image.file.read()  # Read binary data
 
-    service.update_team_icon(team_id, file_data)
+    service.update_icon(team_id, file_data)
 
-    return JSONResponse({"message": "Image uploaded successfully"}, status_code=200)
+    return {"message": "Image uploaded successfully"}
 
 
 @router.get("/teams/{team_id}/image")
 def get_team_image(team_id: int, request: Request, service: TeamServiceDep) -> Response:
     """Fetches and returns the stored binary image for a team"""
-    team_icon = service.get_team_icon(team_id)
+    team_icon = service.get_icon(team_id)
     if not team_icon:
-        return JSONResponse({"error": "Image not found"}, status_code=404)
+        raise NotFoundError("Image not found")
 
     # The tag is the content, so a replaced icon answers a new one.
     etag = f'"{hashlib.sha256(team_icon).hexdigest()}"'
