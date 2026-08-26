@@ -6,6 +6,7 @@ inside a value as part of the query. Use the services' find_by_ methods
 for a value the caller supplies; keep this for a query a client wrote.
 """
 
+import enum
 import re
 from datetime import date, datetime
 from typing import Self, cast
@@ -111,6 +112,8 @@ class QueryUtil:
         except NotImplementedError:
             return value
         try:
+            if issubclass(python_type, enum.Enum):
+                return python_type.from_text(value)
             if python_type is bool:
                 return {"1": True, "true": True, "0": False, "false": False}[
                     value.lower()
@@ -131,6 +134,9 @@ class QueryUtil:
         column = getattr(cls, query.key, None)
         if column is not None:
             if query.operator == "ilike":
+                if isinstance(column.type, Enum):
+                    # Postgres has no ILIKE for a native enum, so match its text
+                    column = column.cast(String)
                 return column.ilike(f"%{query.value}%")
             value = QueryUtil.readValue(column, query.key, query.value)
             if (
@@ -139,7 +145,7 @@ class QueryUtil:
                 and isinstance(column.type, String | AutoString)
                 and not isinstance(column.type, Enum)
             ):
-                # MySQL's collation matched text case-insensitively, Postgres does not
+                # Postgres compares text case-sensitively, so both sides fold
                 column, value = func.lower(column), value.lower()
             if query.operator == "==":
                 filter = column == value

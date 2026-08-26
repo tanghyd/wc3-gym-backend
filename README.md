@@ -42,6 +42,123 @@ DB_URL="postgresql+psycopg://postgres.<ref>:<password>@aws-1-<region>.pooler.sup
 
 Port 5432 is the session pooler, which behaves like a direct connection and is the one to use for `alembic upgrade head` and for a long-lived server. Port 6543 is the transaction pooler for serverless functions; it needs `connect_args={"prepare_threshold": None}` in `init_engine`, which is not set today.
 
+## Deploying to Vercel
+
+Vercel serves `api/index.py`, which imports the same application the container runs. Set `DB_URL`, `JWT_SECRET_KEY`, `ADMIN_TOKEN`, `BOT_CLIENT_TOKEN` and `FRONTEND_URL` in the project settings; the deployment reads no `.env` file.
+
+A deploy runs no migration. Before you deploy a commit that carries one, run it by hand against the same database:
+
+```bash
+DB_URL="<pooler url>" uv run alembic upgrade head
+```
+
+Use the session pooler on port 5432 for that command and for `DB_URL` itself. Port 6543 is the transaction pooler; it needs `connect_args={"prepare_threshold": None}` in `init_engine`, which is not set, so a `DB_URL` on 6543 fails on the second request.
+
+A full-season `POST /import` takes longer than the Vercel function timeout. Import a season from a machine that runs the server itself, or against the pooler URL directly.
+
+## Deploying to a Docker host
+
+The Azure VM runs the same image next to Postgres under Docker Compose. This is the stack with the values a deployment has to fill in; the secrets belong in the stack environment (Portainer, a `.env` next to the file), not in the file.
+
+```yaml
+# GNL prod stack on Postgres. Same shape as gnl_docker_compose/docker-compose.yml with the
+# database swapped and the backend mount removed. Put the secrets in Portainer's stack env, not here.
+name: gnl
+
+services:
+  gnl-postgres:
+    container_name: gnl-postgres
+    image: postgres:17-alpine
+    restart: always
+    command: ["postgres", "-c", "log_min_duration_statement=200", "-c", "effective_cache_size=512MB"]
+    environment:
+      POSTGRES_DB: GYM_BACKEND
+      POSTGRES_USER: gnl_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # Case-insensitive text order, as MySQL had. Only read on first start of an empty volume.
+      POSTGRES_INITDB_ARGS: --locale-provider=icu --icu-locale=en-US
+    volumes:
+      - gnl-pgdata:/var/lib/postgresql/data
+    networks:
+      - gnl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gnl_user -d GYM_BACKEND"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  gnl-backend:
+    container_name: backend
+    image: eashibby/gnl_backend:latest
+    restart: always
+    environment:
+      - DB_URL=postgresql+psycopg://gnl_user:${DB_PASSWORD}@gnl-postgres:5432/GYM_BACKEND
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=HS256
+      - BOT_CLIENT_TOKEN=${BOT_CLIENT_TOKEN}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - LOG_LEVEL=INFO
+    ports:
+      - 5002:5002
+    depends_on:
+      gnl-postgres:
+        condition: service_healthy
+    networks:
+      - gnl-network
+
+  gnl-discord-bot:
+    container_name: discord-bot
+    image: eashibby/gnl_discord_bot:latest
+    restart: always
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - BACKEND_URL=http://backend:5002
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+    depends_on:
+      - gnl-backend
+    networks:
+      - gnl-network
+
+  gnl-admin-ui:
+    container_name: admin-ui
+    image: eashibby/gnl_admin_ui:latest
+    restart: always
+    ports:
+      - "5003:5003"
+    depends_on:
+      - gnl-backend
+    networks:
+      - gnl-network
+
+volumes:
+  gnl-pgdata:
+
+networks:
+  gnl-network:
+    driver: bridge
+```
+
+What this changes against a MySQL stack of the original app:
+
+- `DB_URL` uses the `postgresql+psycopg` scheme, port 5432 and the Postgres service name.
+- The backend mounts no volume over `/app`. The image carries the code, so a new image is a new version; a volume there would shadow it.
+- The container runs `alembic upgrade head` before the server, so it creates the schema on an empty database. `depends_on` with `service_healthy` keeps it from starting before Postgres answers.
+- `BOT_CLIENT_TOKEN` and `FRONTEND_URL` are read; without them the bot's public routes and the browser's CORS requests are refused.
+- `POSTGRES_INITDB_ARGS` picks the ICU collation, which orders text without regard to case as MySQL did. It is read once, on the first start of an empty volume.
+- The data moves by workbook, not by dump: export every season from the old app, `POST /import` each here, newest season first. Then set the `settings` rows and upload the team icons.
+- A backup is one command: `docker compose exec -T gnl-postgres pg_dump -U gnl_user -Fc GYM_BACKEND > gnl.dump`; restore with `pg_restore -U gnl_user -d GYM_BACKEND < gnl.dump` on the same service.
+
+## Season workbooks
+
+`POST /export` writes one season as an xlsx and `POST /import` reads it back. The pair is the migration path off the MySQL app: export each season there, import each here.
+
+The import writes no ids of its own. A season matches by name, a player by battle tag, a team by name and a series by its match and its two players, so the Postgres sequences keep counting from the rows that are already stored.
+
+`tests/data/` holds the real S17 and S18 exports; `just seed` imports both into a running backend (S18 first, so shared players keep the newer attributes) and the suite round-trips them.
+
+Ten sheets travel. These tables do not: `settings`, `w3cstats`, `player_career_stats`, `user_season_signup`, `koth_events`, `koth_matches`, `koth_match_participants`, `koth_signups`, `draft_series`, and the `icon` column of `teams`. Carry those over another way.
+
 ## Project Setup
 
 ### 1. Clone Repository
@@ -123,6 +240,7 @@ uv run just lint        # check formatting and lint, as CI runs them
 uv run just fmt         # apply the formatting and lint fixes
 uv run just db-status   # show the revision the database is on
 uv run just migrate     # bring a database up to date by hand
+uv run just seed        # import the S18 and S17 workbooks from tests/data
 uv run just revision    # write a migration for the current models
 ```
 
