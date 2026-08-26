@@ -1,0 +1,25 @@
+name: DB extract image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [deploy/db-extract/**]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Build and push
+        run: |
+          image=ghcr.io/tanghyd/gnl-db-extract
+          sha=$(echo "${{ github.sha }}" | cut -c1-8)
+          docker build -t "$image:latest" -t "$image:sha-$sha" deploy/db-extract
+          docker push "$image:latest"
+          docker push "$image:sha-$sha"
