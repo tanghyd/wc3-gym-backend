@@ -14,16 +14,16 @@ Add a container on the same network as the MySQL container (prod: `gnl-network`)
 | --- | --- |
 | `DB_HOST` | the MySQL container name (prod: `gnl-mysql`) |
 | `DB_USER`, `DB_PASSWORD`, `DB_NAME` | the values the backend uses |
-| `BLOB_SAS_URL` | optional. A write SAS URL for one blob; the archive is PUT there |
+| `UPLOAD_URL`, `UPLOAD_TOKEN` | optional. Supabase Storage bucket URL `https://<project>.supabase.co/storage/v1/object/<bucket>` and a key allowed to write it; the archive is POSTed there |
 
 Mount a volume on `/out` if you want the archive on the box instead of, or as
-well as, the blob.
+well as, the upload. Download the upload from the Supabase dashboard (Storage).
 
 Equivalent command line:
 
     docker run --rm --network gnl-network -v gnl-extract:/out \
       -e DB_HOST=gnl-mysql -e DB_USER=... -e DB_PASSWORD=... -e DB_NAME=GYM_BACKEND \
-      -e BLOB_SAS_URL='https://<account>.blob.core.windows.net/<container>/<name>.tar.gz?<sas>' \
+      -e UPLOAD_URL=https://<project>.supabase.co/storage/v1/object/dumps -e UPLOAD_TOKEN=... \
       ghcr.io/tanghyd/gnl-db-extract:latest
 
 ## Load tables into Postgres
