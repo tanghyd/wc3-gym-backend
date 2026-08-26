@@ -54,6 +54,7 @@ from src.api.fantasy_api import fantasy_blueprint
 from src.api.config_api import config_blueprint
 from src.api.koth_api import koth_blueprint
 from src.api.stats_api import stats_blueprint
+from src.api.dump_api import dump_blueprint
 
 # Load environment variables from .env file
 load_dotenv()
@@ -234,6 +235,7 @@ config_blueprint.settings_app_service = settings_app_service
 koth_blueprint.koth_app_service = koth_app_service
 
 stats_blueprint.stats_service = stats_app_service
+dump_blueprint.engine = settings_service.engine
 
 # Provide the custom JSON provider to blueprints so services can serialize
 # using the same provider without importing the Flask app/context.
@@ -267,6 +269,7 @@ app.register_blueprint(fantasy_blueprint)
 app.register_blueprint(config_blueprint)
 app.register_blueprint(koth_blueprint)
 app.register_blueprint(stats_blueprint)
+app.register_blueprint(dump_blueprint)
 
 logger.debug("API blueprints registered!")
 
