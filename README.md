@@ -56,6 +56,99 @@ Use the session pooler on port 5432 for that command and for `DB_URL` itself. Po
 
 A full-season `POST /import` takes longer than the Vercel function timeout. Import a season from a machine that runs the server itself, or against the pooler URL directly.
 
+## Deploying to a Docker host
+
+The Azure VM runs the same image next to Postgres under Docker Compose. This is the stack with the values a deployment has to fill in; the secrets belong in the stack environment (Portainer, a `.env` next to the file), not in the file.
+
+```yaml
+# GNL prod stack on Postgres. Same shape as gnl_docker_compose/docker-compose.yml with the
+# database swapped and the backend mount removed. Put the secrets in Portainer's stack env, not here.
+name: gnl
+
+services:
+  gnl-postgres:
+    container_name: gnl-postgres
+    image: postgres:17-alpine
+    restart: always
+    command: ["postgres", "-c", "log_min_duration_statement=200", "-c", "effective_cache_size=512MB"]
+    environment:
+      POSTGRES_DB: GYM_BACKEND
+      POSTGRES_USER: gnl_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # Case-insensitive text order, as MySQL had. Only read on first start of an empty volume.
+      POSTGRES_INITDB_ARGS: --locale-provider=icu --icu-locale=en-US
+    volumes:
+      - gnl-pgdata:/var/lib/postgresql/data
+    networks:
+      - gnl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gnl_user -d GYM_BACKEND"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  gnl-backend:
+    container_name: backend
+    image: eashibby/gnl_backend:latest
+    restart: always
+    environment:
+      - DB_URL=postgresql+psycopg://gnl_user:${DB_PASSWORD}@gnl-postgres:5432/GYM_BACKEND
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=HS256
+      - BOT_CLIENT_TOKEN=${BOT_CLIENT_TOKEN}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - LOG_LEVEL=INFO
+    ports:
+      - 5002:5002
+    depends_on:
+      gnl-postgres:
+        condition: service_healthy
+    networks:
+      - gnl-network
+
+  gnl-discord-bot:
+    container_name: discord-bot
+    image: eashibby/gnl_discord_bot:latest
+    restart: always
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - BACKEND_URL=http://backend:5002
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+    depends_on:
+      - gnl-backend
+    networks:
+      - gnl-network
+
+  gnl-admin-ui:
+    container_name: admin-ui
+    image: eashibby/gnl_admin_ui:latest
+    restart: always
+    ports:
+      - "5003:5003"
+    depends_on:
+      - gnl-backend
+    networks:
+      - gnl-network
+
+volumes:
+  gnl-pgdata:
+
+networks:
+  gnl-network:
+    driver: bridge
+```
+
+What this changes against a MySQL stack of the original app:
+
+- `DB_URL` uses the `postgresql+psycopg` scheme, port 5432 and the Postgres service name.
+- The backend mounts no volume over `/app`. The image carries the code, so a new image is a new version; a volume there would shadow it.
+- The container runs `alembic upgrade head` before the server, so it creates the schema on an empty database. `depends_on` with `service_healthy` keeps it from starting before Postgres answers.
+- `BOT_CLIENT_TOKEN` and `FRONTEND_URL` are read; without them the bot's public routes and the browser's CORS requests are refused.
+- `POSTGRES_INITDB_ARGS` picks the ICU collation, which orders text without regard to case as MySQL did. It is read once, on the first start of an empty volume.
+- The data moves by workbook, not by dump: export every season from the old app, `POST /import` each here, newest season first. Then set the `settings` rows and upload the team icons.
+- A backup is one command: `docker compose exec -T gnl-postgres pg_dump -U gnl_user -Fc GYM_BACKEND > gnl.dump`; restore with `pg_restore -U gnl_user -d GYM_BACKEND < gnl.dump` on the same service.
+
 ## Season workbooks
 
 `POST /export` writes one season as an xlsx and `POST /import` reads it back. The pair is the migration path off the MySQL app: export each season there, import each here.
