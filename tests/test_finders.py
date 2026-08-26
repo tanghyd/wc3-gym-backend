@@ -18,14 +18,14 @@ from app.services.users import UserService
 @pytest.fixture
 def users(app: FastAPI) -> UserService:
     service = UserService()
-    for name in ["Fire or Ice", "Grubby"]:
+    for name, race in [("Fire or Ice", Race.RANDOM), ("Grubby", Race.UD)]:
         service.add(
             UserCreate(
                 name=name,
                 battleTag=f"{name}#1234",
                 discordTag=name,
                 discordId=f"id-{name}",
-                race=Race.RANDOM,
+                race=race,
             )
         )
     return service
@@ -71,5 +71,24 @@ def test_a_number_still_compares_as_a_number(users: UserService) -> None:
     grubby = users.find_by_discord_id("id-Grubby")[0]
 
     found = users.search(QueryUtil.parseQuery(f"id == {grubby.id}"))
+
+    assert [user.name for user in found] == ["Grubby"]
+
+
+def test_a_race_matches_in_any_case(users: UserService) -> None:
+    """Postgres rejects an enum literal in the wrong case outright."""
+    found = users.search(QueryUtil.parseQuery("race == ud"))
+
+    assert [user.name for user in found] == ["Grubby"]
+    assert found == users.search(QueryUtil.parseQuery("race == UD"))
+
+
+def test_a_race_the_enum_does_not_hold_is_rejected(users: UserService) -> None:
+    with pytest.raises(Exception, match="does not take"):
+        users.search(QueryUtil.parseQuery("race == NOTARACE"))
+
+
+def test_ilike_matches_part_of_a_race(users: UserService) -> None:
+    found = users.search(QueryUtil.parseQuery("race ilike u"))
 
     assert [user.name for user in found] == ["Grubby"]
