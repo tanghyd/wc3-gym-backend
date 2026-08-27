@@ -286,7 +286,7 @@ uv run alembic current             # show the revision the database is on
 uv run alembic history             # list the revisions
 ```
 
-The `db` recipes wrap these by deployment path and environment: `just db status local`, `just db migrate vercel prod`, `just db seed vercel staging`, `just db list vercel staging`, `just db drop vercel staging <database>`. The URLs come from `.env` (`LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`); `.env` is not committed. The Azure staging box has no URL reachable from a laptop and is seeded over SSH from the gym-root workspace (`just azure seed`), so `just db ... azure ...` answers "not implemented".
+The `db` recipes wrap these by deployment path and environment: `just db status local`, `just db migrate vercel prod`, `just db seed vercel staging`, `just db list vercel staging`, `just db drop vercel staging <database>`. The URLs come from `.env.local` (`LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`), which is gitignored; the committed `.env` stays a template. The Azure staging box has no URL reachable from a laptop and is seeded over SSH from the gym-root workspace (`just azure seed`), so `just db ... azure ...` answers "not implemented".
 
 ### DB_URL names the same database twice
 

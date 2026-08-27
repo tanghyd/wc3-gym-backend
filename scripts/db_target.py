@@ -1,4 +1,4 @@
-"""Print the DB_URL for a deployment path and environment, read from .env.
+"""Print the DB_URL for a deployment path and environment, read from .env.local (never committed).
 
 usage: db_target.py <path> <env>
   local                 LOCAL_DB_URL, default the compose database on localhost
@@ -12,7 +12,7 @@ import sys
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(".env.local")
 
 LOCAL_DEFAULT = "postgresql+psycopg://gym_user:gym_user@localhost:5432/gym_backend"
 NOT_IMPLEMENTED = {
@@ -32,7 +32,7 @@ def main(path: str, env: str) -> None:
             key = f"VERCEL_{e.upper()}_DB_URL"
             url = os.environ.get(key)
             if not url:
-                sys.exit(f"{key} is not set in .env")
+                sys.exit(f"{key} is not set in .env.local")
             print(url)
         case pair if pair in NOT_IMPLEMENTED:
             sys.exit(f"not implemented: {NOT_IMPLEMENTED[pair]}")
