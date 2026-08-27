@@ -94,16 +94,11 @@ def main(src: str, dst: str, seasons: set[str]) -> None:
     ]
     drop("seasons", "id", seasons)
     # Prod holds one bet twice; the seeded database is unique per series and
-    # bettor, so keep the bet that was made first
+    # bettor, so keep the row that holds the pick the bettor made last
     header, *bets = tables["fantasy_bets"]
     key = itemgetter(header.index("series_id"), header.index("user_id"))
-    seen: set[tuple[str, str]] = set()
-    kept = []
-    for row in bets:
-        if key(row) not in seen:
-            seen.add(key(row))
-            kept.append(row)
-    tables["fantasy_bets"] = [header] + kept
+    last = {key(row): row for row in bets}
+    tables["fantasy_bets"] = [header] + [r for r in bets if last[key(r)] is r]
     for r in tables["settings"][1:]:
         if r[1] == "KOTH_NIGHTBOT_TOKEN":
             r[2] = ""
