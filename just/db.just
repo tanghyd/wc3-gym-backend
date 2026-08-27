@@ -5,7 +5,15 @@
 # The URL comes from .env (LOCAL_DB_URL, VERCEL_PROD_DB_URL, VERCEL_STAGING_DB_URL); scripts/db_target.py
 # answers "not implemented" for the Azure box, which is seeded over SSH from the gym root.
 
+# Recipes run from the repository root, one level up from this file.
+set working-directory := '..'
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
 seed_repo := "Warcraft-Gym/wc3-gym-backend-db-seed"
+
+default:
+    @just --list db
 
 # Bring the database to the latest migration. For vercel staging: the template and the shared database.
 migrate path env="":

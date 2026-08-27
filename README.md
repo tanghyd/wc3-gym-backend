@@ -18,7 +18,7 @@ FastAPI REST API for the GNL (Gym Newbie League) esports platform providing JWT-
 
 ### Option 1: PostgreSQL Docker Container (Recommended)
 
-Run PostgreSQL in a Docker container (`just up` does this for you):
+Run PostgreSQL in a Docker container (`just containers up` does this for you):
 
 ```bash
 docker run -d \
@@ -151,7 +151,7 @@ What this changes against a MySQL stack of the original app:
 
 The import writes no ids of its own. A season matches by name, a player by battle tag, a team by name and a series by its match and its two players, so the Postgres sequences keep counting from the rows that are already stored.
 
-`tests/data/` holds the real S17 and S18 exports; `just seed` imports both into a running backend (S18 first, so shared players keep the newer attributes) and the suite round-trips them.
+`tests/data/` holds the real S17 and S18 exports; `just containers import-xlsx` imports both into a running backend (S18 first, so shared players keep the newer attributes) and the suite round-trips them.
 
 Ten sheets travel. These tables do not: `settings`, `w3cstats`, `player_career_stats`, `user_season_signup`, `koth_events`, `koth_matches`, `koth_match_participants`, `koth_signups`, `draft_series`, and the `icon` column of `teams`. Carry those over another way.
 
@@ -178,7 +178,7 @@ Dependencies live in `pyproject.toml`: runtime packages under `[project] depende
 
 ### 3. Know the environment variables
 
-The backend reads its configuration from the environment. `just up` passes development-only values, so nothing here needs setting by hand to run the project locally. Read this table before deploying, and when a container starts but behaves oddly.
+The backend reads its configuration from the environment. `just containers up` passes development-only values, so nothing here needs setting by hand to run the project locally. Read this table before deploying, and when a container starts but behaves oddly.
 
 `.env` is gitignored; copy `.env.example` to `.env` and fill in what you use. `create_app` calls `load_dotenv`, so its values arrive on their own; each has a default in the code. The deployment secrets are passed in by the stack.
 
@@ -222,31 +222,36 @@ BOT_WEBHOOK_URL="http://host.docker.internal:3001/webhook/series-updated"
 
 ### Using just (Recommended)
 
-[just](https://github.com/casey/just) is a command runner. It reads recipes from the `justfile` in the repository root. The dev dependencies install it (PyPI package `rust-just`), so after `uv sync` no separate install is needed — run recipes with `uv run just`:
+[just](https://github.com/casey/just) is a command runner. It reads recipes from the `justfile` in the repository root, which groups them into two modules under `just/`: `containers` for the Docker dev stack and `db` for the databases. The dev dependencies install it (PyPI package `rust-just`), so after `uv sync` no separate install is needed — run recipes with `uv run just`:
 
 ```bash
-uv run just             # list the recipes
-uv run just up          # build the image, start Postgres and the backend in Docker
-uv run just restart     # start the containers again after a stop
-uv run just logs        # follow the backend log
-uv run just status      # show the gnl containers
-uv run just down        # stop the containers
-uv run just test        # run the tests, as CI runs them
-uv run just lint        # check formatting and lint, as CI runs them
-uv run just fmt         # apply the formatting and lint fixes
-uv run just db-status   # show the revision the database is on
-uv run just migrate     # bring a database up to date by hand
-uv run just seed        # import the S18 and S17 workbooks from tests/data
-uv run just revision    # write a migration for the current models
+uv run just                        # list the recipes
+uv run just test                   # run the tests, as CI runs them
+uv run just lint                   # check formatting and lint, as CI runs them
+uv run just fmt                    # apply the formatting and lint fixes
+
+uv run just containers up          # build the image, start Postgres and the backend in Docker
+uv run just containers restart     # start the containers again after a stop
+uv run just containers logs        # follow the backend log
+uv run just containers status      # show the gnl containers
+uv run just containers down        # stop the containers
+uv run just containers import-xlsx # import the S18 and S17 workbooks from tests/data
+
+uv run just db status local        # show the revision the database is on
+uv run just db migrate local       # bring a database up to date by hand
+uv run just db seed local          # migrate, then load the private seed repo
+uv run just db revision "message"  # write a migration for the current models
 ```
 
-`up` covers the full PostgreSQL setup from above: on first use it creates the `gnl-net` Docker network and the `gnl-postgres` container with a named volume (`gnl-postgres-data`), so the database survives `down` and container removal. It then builds the image and starts it on port 5002. Run it again after a code change to rebuild and restart the backend.
+`just db` lists the database recipes and the paths they take; `just containers` does the same for the stack.
 
-The image is tagged `gnl-backend:local`. The tag means what it says: `just up` builds it from the working tree for use on this machine, and nothing pushes it to a registry. A deployment builds and names its own image, so treat `gnl-backend:local` as a local name only and do not read it as a stage of a release.
+`containers up` covers the full PostgreSQL setup from above: on first use it creates the `gnl-net` Docker network and the `gnl-postgres` container with a named volume (`gnl-postgres-data`), so the database survives `containers down` and container removal. It then builds the image and starts it on port 5002. Run it again after a code change to rebuild and restart the backend.
 
-`up` replaces the backend container, which is what makes it the recipe for a code change. `restart` starts the containers that are already there, which is what a stopped Docker Desktop leaves behind. Neither loses the database: the data is in the `gnl-postgres-data` volume.
+The image is tagged `gnl-backend:local`. The tag means what it says: `just containers up` builds it from the working tree for use on this machine, and nothing pushes it to a registry. A deployment builds and names its own image, so treat `gnl-backend:local` as a local name only and do not read it as a stage of a release.
 
-The container starts with development-only values (`ADMIN_TOKEN=devtoken`, `JWT_SECRET_KEY=devsecret`). Log in with `devtoken`. Do not use these values outside local development. The backend accepts connections about 30 seconds after `up` returns.
+`containers up` replaces the backend container, which is what makes it the recipe for a code change. `containers restart` starts the containers that are already there, which is what a stopped Docker Desktop leaves behind. Neither loses the database: the data is in the `gnl-postgres-data` volume.
+
+The container starts with development-only values (`ADMIN_TOKEN=devtoken`, `JWT_SECRET_KEY=devsecret`). Log in with `devtoken`. Do not use these values outside local development. The backend accepts connections about 30 seconds after `containers up` returns.
 
 If `just` is installed system-wide, the `uv run` prefix is optional.
 
@@ -258,7 +263,7 @@ If `just` is installed system-wide, the `uv run` prefix is optional.
 
 ### Manual Docker Commands
 
-The image name is the only difference from what `just up` runs. `gnl-backend:local` is the tag `up` builds for this machine; `eashibby/gnl_backend:latest` is the published name a deployment pulls. One Dockerfile builds both, so the tag records where an image is meant to run and nothing else.
+The image name is the only difference from what `just containers up` runs. `gnl-backend:local` is the tag `containers up` builds for this machine; `eashibby/gnl_backend:latest` is the published name a deployment pulls. One Dockerfile builds both, so the tag records where an image is meant to run and nothing else.
 
 ```bash
 # Build image
@@ -312,7 +317,7 @@ Read what autogenerate wrote before committing it. It compares the models agains
 
 ### Stopping and starting a container
 
-Starting a container again runs its command again, so `alembic upgrade head` runs at every start. It is the migration command that repeats, not the migration. Alembic reads the revision recorded in the `alembic_version` table, finds the database already at head, and emits no DDL, so the tables and the data are untouched. There is nothing to clean up between a `docker stop` and a `docker start`, and `just restart` is safe to run as often as you like.
+Starting a container again runs its command again, so `alembic upgrade head` runs at every start. It is the migration command that repeats, not the migration. Alembic reads the revision recorded in the `alembic_version` table, finds the database already at head, and emits no DDL, so the tables and the data are untouched. There is nothing to clean up between a `docker stop` and a `docker start`, and `just containers restart` is safe to run as often as you like.
 
 The log tells the two apart. A start with work to do names the revision it applies:
 
@@ -320,7 +325,7 @@ The log tells the two apart. A start with work to do names the revision it appli
 INFO  [alembic.runtime.migration] Running upgrade  -> 658616cf0c2b, Create the initial schema
 ```
 
-A start with nothing to do logs the two context lines and goes straight to the server, with no `Running upgrade` line. `just logs` shows this.
+A start with nothing to do logs the two context lines and goes straight to the server, with no `Running upgrade` line. `just containers logs` shows this.
 
 ### Serving from more than one container
 
@@ -369,7 +374,7 @@ uv sync
 
 ### Port 5002 Already in Use
 
-**Solution:** Stop whatever holds the port. The usual cause is the backend container: run `uv run just down`.
+**Solution:** Stop whatever holds the port. The usual cause is the backend container: run `uv run just containers down`.
 ```bash
 # Find process using port
 netstat -ano | findstr :5002
@@ -385,8 +390,12 @@ backend/
 ├── pyproject.toml          # Project metadata and dependencies
 ├── uv.lock                 # Pinned dependency versions (managed by uv)
 ├── Dockerfile             # Docker image definition
-├── justfile               # The everyday commands
-├── .env                   # Committed configuration that is not secret
+├── vercel.json            # The Vercel build command, which migrates by environment
+├── justfile               # The everyday commands: test, lint, fmt
+├── just/                  # The recipe modules: containers.just, db.just
+├── .env                   # Local values and database URLs; gitignored, copy .env.example
+├── api/                   # The Vercel entry point and its preview-database choice
+├── scripts/               # Database helpers the just db recipes call
 ├── tests/                 # pytest suite
 ├── app/
 │   ├── main.py            # The application factory, create_app
@@ -415,9 +424,9 @@ The server calls the factory, so nothing builds an application at import:
 ## Development Workflow
 
 1. Make code changes
-2. Rebuild and restart with `uv run just up`
+2. Rebuild and restart with `uv run just containers up`
 3. Test endpoints at http://localhost:5002/docs
-4. Read the log with `uv run just logs`
+4. Read the log with `uv run just containers logs`
 
 ## Tests
 
