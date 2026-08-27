@@ -18,7 +18,7 @@ FastAPI REST API for the GNL (Gym Newbie League) esports platform providing JWT-
 
 ### Option 1: PostgreSQL Docker Container (Recommended)
 
-Run PostgreSQL in a Docker container (`just containers up` does this for you):
+Run PostgreSQL in a Docker container (`just up` does this for you):
 
 ```bash
 docker run -d \
@@ -41,6 +41,24 @@ DB_URL="postgresql+psycopg://postgres.<ref>:<password>@aws-<n>-<region>.pooler.s
 ```
 
 Port 5432 is the session pooler, which behaves like a direct connection and is the one to use for `alembic upgrade head` and for a long-lived server. Port 6543 is the transaction pooler for serverless functions; it needs `connect_args={"prepare_threshold": None}` in `init_engine`, which is not set today.
+
+## Where the backend runs
+
+One code, two mechanisms, five places. Docker runs the image with `alembic upgrade head` at every start; Vercel runs `api/index.py` as a function and migrates in the build. Every recipe that reaches a place takes the same two words, a path and an environment. A cell that says "refused" is a recipe that exits 2 with the reason, not a missing recipe.
+
+| Recipe | `local` | `azure staging` | `azure prod` | `vercel prod` | `vercel staging` |
+|---|---|---|---|---|---|
+| `just deploy` | refused: `just up` | pins the box to a GHCR tag over SSH | refused: Portainer | `vercel deploy --prod` from the working tree | `vercel deploy`, a preview |
+| `just status` | the containers | health, pinned image, `compose ps` | refused | `vercel ls --prod` | `vercel ls` |
+| `just logs` | `docker logs -f` | `compose logs -f` over SSH | refused | `vercel logs --prod` | refused: no fixed URL |
+| `just db migrate` | alembic | alembic inside the container over SSH | refused | alembic on the pooler URL | the template and the shared database |
+| `just db status` | alembic | over SSH | refused | alembic | alembic |
+| `just db seed` | the private seed repo | the seed repo, loaded inside the container | refused | the seed repo | the seed repo |
+| `just db url` | `LOCAL_DB_URL` | refused: no URL from a laptop | refused | `VERCEL_PROD_DB_URL` | `VERCEL_STAGING_DB_URL` |
+
+`local` is the default where a recipe has one: `just logs` is `just logs local`. The values come from `.env`, copied from `.env.example` and gitignored: the three database URLs and `AZURE_STAGING_HOST`, which is `terraform -chdir=infra output -raw fqdn` in the gym-root workspace. `azure prod` is EAShibby's box, reached only through Portainer, so every recipe refuses it. A push to `main` deploys `vercel prod` on its own; `just deploy vercel prod` is the same deploy from a working tree.
+
+The gym-root workspace owns what spans two repositories: Terraform for the Azure box, the frontend, and `just azure deploy`, which calls `just deploy azure staging` here for the backend half.
 
 ## Deploying to Vercel
 
@@ -151,7 +169,7 @@ What this changes against a MySQL stack of the original app:
 
 The import writes no ids of its own. A season matches by name, a player by battle tag, a team by name and a series by its match and its two players, so the Postgres sequences keep counting from the rows that are already stored.
 
-`tests/data/` holds the real S17 and S18 exports; `just containers import-xlsx` imports both into a running backend (S18 first, so shared players keep the newer attributes) and the suite round-trips them.
+`tests/data/` holds the real S17 and S18 exports; `just import-xlsx` imports both into a running backend (S18 first, so shared players keep the newer attributes) and the suite round-trips them.
 
 Ten sheets travel. These tables do not: `settings`, `w3cstats`, `player_career_stats`, `user_season_signup`, `koth_events`, `koth_matches`, `koth_match_participants`, `koth_signups`, `draft_series`, and the `icon` column of `teams`. Carry those over another way.
 
@@ -178,7 +196,7 @@ Dependencies live in `pyproject.toml`: runtime packages under `[project] depende
 
 ### 3. Know the environment variables
 
-The backend reads its configuration from the environment. `just containers up` passes development-only values, so nothing here needs setting by hand to run the project locally. Read this table before deploying, and when a container starts but behaves oddly.
+The backend reads its configuration from the environment. `just up` passes development-only values, so nothing here needs setting by hand to run the project locally. Read this table before deploying, and when a container starts but behaves oddly.
 
 `.env` is gitignored; copy `.env.example` to `.env` and fill in what you use. `create_app` calls `load_dotenv`, so its values arrive on their own; each has a default in the code. The deployment secrets are passed in by the stack.
 
@@ -222,7 +240,7 @@ BOT_WEBHOOK_URL="http://host.docker.internal:3001/webhook/series-updated"
 
 ### Using just (Recommended)
 
-[just](https://github.com/casey/just) is a command runner. It reads recipes from the `justfile` in the repository root, which groups them into two modules under `just/`: `containers` for the Docker dev stack and `db` for the databases. The dev dependencies install it (PyPI package `rust-just`), so after `uv sync` no separate install is needed — run recipes with `uv run just`:
+[just](https://github.com/casey/just) is a command runner. It reads recipes from the `justfile` in the repository root; the database recipes are the `db` module in `just/`. The dev dependencies install it (PyPI package `rust-just`), so after `uv sync` no separate install is needed — run recipes with `uv run just`:
 
 ```bash
 uv run just                        # list the recipes
@@ -230,12 +248,16 @@ uv run just test                   # run the tests, as CI runs them
 uv run just lint                   # check formatting and lint, as CI runs them
 uv run just fmt                    # apply the formatting and lint fixes
 
-uv run just containers up          # build the image, start Postgres and the backend in Docker
-uv run just containers restart     # start the containers again after a stop
-uv run just containers logs        # follow the backend log
-uv run just containers status      # show the gnl containers
-uv run just containers down        # stop the containers
-uv run just containers import-xlsx # import the S18 and S17 workbooks from tests/data
+uv run just up                     # build the image, start Postgres and the backend in Docker
+uv run just restart                # start the containers again after a stop
+uv run just down                   # stop the containers
+uv run just psql                   # open psql on the local database
+uv run just serve                  # run the app as Vercel runs it, from the working tree
+uv run just import-xlsx            # import the S18 and S17 workbooks from tests/data
+
+uv run just logs                   # follow the backend log; also `logs azure staging`, `logs vercel prod`
+uv run just status                 # show what runs; also `status azure staging`, `status vercel prod`
+uv run just deploy azure staging   # pin the box to the staging tag; also `deploy vercel prod`
 
 uv run just db status local        # show the revision the database is on
 uv run just db migrate local       # bring a database up to date by hand
@@ -243,15 +265,17 @@ uv run just db seed local          # migrate, then load the private seed repo
 uv run just db revision "message"  # write a migration for the current models
 ```
 
-`just db` lists the database recipes and the paths they take; `just containers` does the same for the stack.
+`just db` lists the database recipes. Every recipe that names a place takes the same path and environment; "Where the backend runs" above is the table.
 
-`containers up` covers the full PostgreSQL setup from above: on first use it creates the `gnl-net` Docker network and the `gnl-postgres` container with a named volume (`gnl-postgres-data`), so the database survives `containers down` and container removal. It then builds the image and starts it on port 5002. Run it again after a code change to rebuild and restart the backend.
+`up` covers the full PostgreSQL setup from above: on first use it creates the `gnl-net` Docker network and the `gnl-postgres` container with a named volume (`gnl-postgres-data`), so the database survives `down` and container removal. It then builds the image and starts it on port 5002. Run it again after a code change to rebuild and restart the backend.
 
-The image is tagged `gnl-backend:local`. The tag means what it says: `just containers up` builds it from the working tree for use on this machine, and nothing pushes it to a registry. A deployment builds and names its own image, so treat `gnl-backend:local` as a local name only and do not read it as a stage of a release.
+The image is tagged `gnl-backend:local`. The tag means what it says: `just up` builds it from the working tree for use on this machine, and nothing pushes it to a registry. A deployment builds and names its own image, so treat `gnl-backend:local` as a local name only and do not read it as a stage of a release.
 
-`containers up` replaces the backend container, which is what makes it the recipe for a code change. `containers restart` starts the containers that are already there, which is what a stopped Docker Desktop leaves behind. Neither loses the database: the data is in the `gnl-postgres-data` volume.
+`up` replaces the backend container, which is what makes it the recipe for a code change. `restart` starts the containers that are already there, which is what a stopped Docker Desktop leaves behind. Neither loses the database: the data is in the `gnl-postgres-data` volume.
 
-The container starts with development-only values (`ADMIN_TOKEN=devtoken`, `JWT_SECRET_KEY=devsecret`). Log in with `devtoken`. Do not use these values outside local development. The backend accepts connections about 30 seconds after `containers up` returns.
+The container starts with development-only values (`ADMIN_TOKEN=devtoken`, `JWT_SECRET_KEY=devsecret`). Log in with `devtoken`. Do not use these values outside local development. The backend accepts connections about 30 seconds after `up` returns.
+
+`serve` is the other way to run the code: `uvicorn api.index:app` from the working tree, with `DB_URL` from `.env`, no image and no migration at start. It is what Vercel runs, so use it to reproduce a Vercel-only fault. Migrate first with `just db migrate local`.
 
 If `just` is installed system-wide, the `uv run` prefix is optional.
 
@@ -263,7 +287,7 @@ If `just` is installed system-wide, the `uv run` prefix is optional.
 
 ### Manual Docker Commands
 
-The image name is the only difference from what `just containers up` runs. `gnl-backend:local` is the tag `containers up` builds for this machine; `eashibby/gnl_backend:latest` is the published name a deployment pulls. One Dockerfile builds both, so the tag records where an image is meant to run and nothing else.
+The image name is the only difference from what `just up` runs. `gnl-backend:local` is the tag `up` builds for this machine; `eashibby/gnl_backend:latest` is the published name a deployment pulls. One Dockerfile builds both, so the tag records where an image is meant to run and nothing else.
 
 ```bash
 # Build image
@@ -291,7 +315,7 @@ uv run alembic current             # show the revision the database is on
 uv run alembic history             # list the revisions
 ```
 
-The `db` recipes wrap these by deployment path and environment: `just db status local`, `just db migrate vercel prod`, `just db seed vercel staging`, `just db list vercel staging`, `just db drop vercel staging <database>`. The URLs come from `.env` (`LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`), gitignored, copied from `.env.example`. The Azure staging box has no URL reachable from a laptop and is seeded over SSH from the gym-root workspace (`just azure seed`), so `just db ... azure ...` answers "not implemented".
+The `db` recipes wrap these by deployment path and environment: `just db status local`, `just db migrate vercel prod`, `just db seed azure staging`, `just db list vercel staging`, `just db drop vercel staging <database>`. `just db url <path> <env>` prints the URL a pair resolves to, from `.env` (`LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`), gitignored, copied from `.env.example`. The Azure staging box has no URL reachable from a laptop, so its recipes run alembic and the seed script inside the backend container over SSH.
 
 ### DB_URL names the same database twice
 
@@ -317,7 +341,7 @@ Read what autogenerate wrote before committing it. It compares the models agains
 
 ### Stopping and starting a container
 
-Starting a container again runs its command again, so `alembic upgrade head` runs at every start. It is the migration command that repeats, not the migration. Alembic reads the revision recorded in the `alembic_version` table, finds the database already at head, and emits no DDL, so the tables and the data are untouched. There is nothing to clean up between a `docker stop` and a `docker start`, and `just containers restart` is safe to run as often as you like.
+Starting a container again runs its command again, so `alembic upgrade head` runs at every start. It is the migration command that repeats, not the migration. Alembic reads the revision recorded in the `alembic_version` table, finds the database already at head, and emits no DDL, so the tables and the data are untouched. There is nothing to clean up between a `docker stop` and a `docker start`, and `just restart` is safe to run as often as you like.
 
 The log tells the two apart. A start with work to do names the revision it applies:
 
@@ -325,7 +349,7 @@ The log tells the two apart. A start with work to do names the revision it appli
 INFO  [alembic.runtime.migration] Running upgrade  -> 658616cf0c2b, Create the initial schema
 ```
 
-A start with nothing to do logs the two context lines and goes straight to the server, with no `Running upgrade` line. `just containers logs` shows this.
+A start with nothing to do logs the two context lines and goes straight to the server, with no `Running upgrade` line. `just logs` shows this.
 
 ### Serving from more than one container
 
@@ -374,7 +398,7 @@ uv sync
 
 ### Port 5002 Already in Use
 
-**Solution:** Stop whatever holds the port. The usual cause is the backend container: run `uv run just containers down`.
+**Solution:** Stop whatever holds the port. The usual cause is the backend container: run `uv run just down`.
 ```bash
 # Find process using port
 netstat -ano | findstr :5002
@@ -391,9 +415,9 @@ backend/
 ├── uv.lock                 # Pinned dependency versions (managed by uv)
 ├── Dockerfile             # Docker image definition
 ├── vercel.json            # The Vercel build command, which migrates by environment
-├── justfile               # The everyday commands: test, lint, fmt
-├── just/                  # The recipe modules: containers.just, db.just
-├── .env                   # Local values and database URLs; gitignored, copy .env.example
+├── justfile               # The commands: test, lint, fmt, the local stack, deploy, logs, status
+├── just/                  # The db module: migrate, seed, list, drop by path and environment
+├── .env                   # Database URLs and the staging host; gitignored, copy .env.example
 ├── api/                   # The Vercel entry point and its preview-database choice
 ├── scripts/               # Database helpers the just db recipes call
 ├── tests/                 # pytest suite
@@ -424,9 +448,9 @@ The server calls the factory, so nothing builds an application at import:
 ## Development Workflow
 
 1. Make code changes
-2. Rebuild and restart with `uv run just containers up`
+2. Rebuild and restart with `uv run just up`
 3. Test endpoints at http://localhost:5002/docs
-4. Read the log with `uv run just containers logs`
+4. Read the log with `uv run just logs`
 
 ## Tests
 
