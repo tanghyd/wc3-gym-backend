@@ -2,7 +2,7 @@
 #   just db <recipe> local
 #   just db <recipe> vercel prod
 #   just db <recipe> vercel staging
-# The URL comes from .env.local (LOCAL_DB_URL, VERCEL_PROD_DB_URL, VERCEL_STAGING_DB_URL); scripts/db_target.py
+# The URL comes from .env (LOCAL_DB_URL, VERCEL_PROD_DB_URL, VERCEL_STAGING_DB_URL); scripts/db_target.py
 # answers "not implemented" for the Azure box, which is seeded over SSH from the gym root.
 
 seed_repo := "Warcraft-Gym/wc3-gym-backend-db-seed"

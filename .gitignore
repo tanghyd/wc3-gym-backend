@@ -172,5 +172,5 @@ cython_debug/
 docker-compose*
 .vercel
 
-# Database URLs for the just db recipes, see README
-.env.local
+# Local values and database URLs, copied from .env.example
+.env
