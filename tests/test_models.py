@@ -22,6 +22,7 @@ TABLES = {
     "koth_events",
     "koth_match_participants",
     "koth_matches",
+    "ladder_achievements",
     "koth_signups",
     "map_season",
     "maps",

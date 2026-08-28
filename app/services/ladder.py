@@ -8,6 +8,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,7 @@ from app.core import achievements, ladder
 from app.core.db import Session
 from app.core.exceptions import NotFoundError, W3CThrottledError
 from app.models.enums import Race
+from app.models.ladder_achievement import LadderAchievement
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.team import Team
@@ -76,10 +78,11 @@ class LadderService:
     def season_ladder(self, season_id: int) -> SeasonLadder:
         """The ladder of one season: its teams, its players and its hours.
 
-        Ten statements, whatever the number of players: the season, the
-        signups with their team, one group each for the totals, the MMR spans,
-        the player days, the races, the hours and the season days, then the
-        matches the achievements read and the season's coaches.
+        Eleven statements, whatever the number of players: the season, the
+        signups with their team, the achievement set this season pays, one
+        group each for the totals, the MMR spans, the player days, the races,
+        the hours and the season days, then the matches the achievements read
+        and the season's coaches.
         """
         with Session.begin() as session:
             season = session.get(Season, season_id)
@@ -97,7 +100,8 @@ class LadderService:
             races = _vs_race(session, scope)
             by_hour = _by_hour(session, scope)
             games = _games_per_day(session, scope)
-            earned = _earned(session, scope, roster, totals, season_id)
+            paid = _paid(session, season_id)
+            earned = _earned(session, scope, roster, totals, season_id, paid)
             stamps = [row.synced_at for row in roster if row.synced_at]
             return SeasonLadder(
                 season=LadderSeason(
@@ -110,7 +114,7 @@ class LadderService:
                 total_games=sum(games.values()),
                 by_hour=by_hour,
                 per_day=_season_days(season, games),
-                achievement_rules=achievements.ACHIEVEMENTS,
+                achievement_rules=_rules(paid),
                 teams=_teams(roster, totals, spans, days, races, earned),
             )
 
@@ -124,8 +128,9 @@ class LadderService:
         """One player's record, and one page of the matches behind it.
 
         A season names the window; without one the answer is his whole
-        history. Seven statements, ten with a season, which adds the season,
-        its roster and its coaches for the achievements that read a team.
+        history. Eight statements, eleven with a season, which adds the
+        season, its roster and its coaches for the achievements that read a
+        team.
         """
         with Session.begin() as session:
             user = session.execute(
@@ -151,7 +156,8 @@ class LadderService:
             totals = _totals(session, scope)
             spans = _mmr_span(session, _mmr_scope([user_id], window, season_id))
             roster = _roster(session, season_id) if season_id is not None else []
-            earned = _earned(session, scope, roster, totals, season_id)
+            paid = _paid(session, season_id)
+            earned = _earned(session, scope, roster, totals, season_id, paid)
             answer = _player(
                 UserLadder,
                 user,
@@ -658,12 +664,44 @@ def _opponents(roster: Sequence[Row]) -> dict[int, frozenset[str]]:
     return {row.user_id: frozenset(everyone - by_team[row.team_id]) for row in roster}
 
 
+def _paid(session: OrmSession, season_id: int | None) -> achievements.PaidSet:
+    """What this scope pays for each rule.
+
+    A season reads its own rows; the all-time scope reads the rows that name
+    no season. A scope with no rows pays nothing, which is how a season drops
+    a rule: by not having one.
+    """
+    where = (
+        LadderAchievement.season_id == season_id
+        if season_id is not None
+        else LadderAchievement.season_id.is_(None)
+    )
+    rows = session.execute(
+        select(
+            LadderAchievement.rule_id,
+            LadderAchievement.points,
+            LadderAchievement.target,
+        ).where(where)
+    ).all()
+    return {row.rule_id: achievements.Paid(row.points, row.target) for row in rows}
+
+
+def _rules(paid: achievements.PaidSet) -> list[achievements.Achievement]:
+    """The catalogue this scope draws, at the prices this scope pays."""
+    return [
+        replace(rule, points=paid[rule.id].points)
+        for rule in achievements.ACHIEVEMENTS
+        if rule.id in paid
+    ]
+
+
 def _earned(
     session: OrmSession,
     scope: list[ColumnElement[bool]],
     roster: Sequence[Row],
     totals: dict[int, Row],
     season_id: int | None,
+    paid: achievements.PaidSet,
 ) -> dict[int, list[achievements.Achievement]]:
     """Every player's achievements, over the rows the totals already read.
 
@@ -680,6 +718,7 @@ def _earned(
         user_id: achievements.earned(
             matches,
             int(totals[user_id].points or 0) if user_id in totals else 0,
+            paid,
             opponents.get(user_id, frozenset()),
             coaches,
             tags.get(user_id, "") in coaches,

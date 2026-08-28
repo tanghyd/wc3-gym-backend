@@ -139,7 +139,9 @@ def test_our_numbers_match_wc3_no(
     opponents = frozenset(state["everyone"] - state["roster"][state["team_of"][tag]])
     coaches = state["coaches"]
     coach = tag in coaches
-    earned = achievements.earned(mine, totals.points, opponents, coaches, coach)
+    earned = achievements.earned(
+        mine, totals.points, achievements.DEFAULT_PAID, opponents, coaches, coach
+    )
 
     expected_points = ladder.WIN_POINTS * wins + ladder.LOSS_POINTS * losses
     print(
