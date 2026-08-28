@@ -21,6 +21,7 @@ from app.core import ladder
 from app.core.db import Session
 from app.models.enums import Race
 from app.models.relationships import DBUserSeasonSignup
+from app.models.season import Season
 from app.models.user import User
 from app.models.w3c_ladder_match import W3CLadderMatch
 from tests.test_query_budget import count_statements
@@ -29,11 +30,37 @@ from tests.test_query_budget import count_statements
 INSIDE = datetime(2026, 1, 7, 14, 30)
 
 
-def sign_up(season_id: int, user_ids: list[int]) -> None:
+def sign_up(season_id: int, user_ids: list[int], race: Race | None = None) -> None:
     with Session() as session:
         for user_id in user_ids:
-            session.add(DBUserSeasonSignup(user_id=user_id, season_id=season_id))
+            session.add(
+                DBUserSeasonSignup(user_id=user_id, season_id=season_id, race=race)
+            )
         session.commit()
+
+
+def set_signup_race(season_id: int, user_id: int, race: Race) -> None:
+    """The race the player registered on for that one season."""
+    with Session() as session:
+        key = {"season_id": season_id, "user_id": user_id}
+        session.get(DBUserSeasonSignup, key).race = race
+        session.commit()
+
+
+def second_season(season_id: int) -> int:
+    """Another season over the same days, so only the signup race differs."""
+    with Session() as session:
+        first = session.get(Season, season_id)
+        other = Season(
+            name="Signup fallback",
+            number_weeks=first.number_weeks,
+            series_per_week=first.series_per_week,
+            start_date=first.start_date,
+            end_date=first.end_date,
+        )
+        session.add(other)
+        session.commit()
+        return other.id
 
 
 def add_match(
@@ -72,6 +99,15 @@ def add_match(
             )
         )
         session.commit()
+
+
+def matches_of(
+    client: Client, headers: dict[str, str], user_id: int, season_id: int
+) -> list[str]:
+    """The match ids one player scored in a season, newest first."""
+    resp = client.get(f"/users/{user_id}/ladder?season_id={season_id}", headers=headers)
+    assert resp.status_code == 200, resp.text
+    return [match["w3c_match_id"] for match in resp.json()["matches"]]
 
 
 @pytest.fixture
@@ -495,6 +531,42 @@ def test_vs_race_buckets_a_random_opponent_under_random(
 
     assert row["vs_race"]["RANDOM"] == [1, 0]
     assert row["vs_race"]["UD"] == [0, 0]
+
+
+def test_the_signup_race_scores_the_season_it_belongs_to(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """A season scores on the race its signup names, and users.race decides
+    only where the signup names none. So re-registering on another race later
+    leaves every past season where it stands."""
+    player = league["player_ids"][0]  # registered HU on the user row
+    add_match(player, "undead", race=Race.UD)
+    add_match(player, "human", race=Race.HU, start_time=INSIDE + timedelta(hours=1))
+    set_signup_race(league["season_id"], player, Race.UD)
+    fallback = second_season(league["season_id"])
+    sign_up(fallback, [player])
+
+    on_signup = matches_of(client, auth_headers, player, league["season_id"])
+    on_user = matches_of(client, auth_headers, player, fallback)
+
+    assert on_signup == ["undead"]
+    assert on_user == ["human"]
+    assert ladder_of(client, auth_headers, league["season_id"])["total_games"] == 1
+    assert ladder_of(client, auth_headers, fallback)["total_games"] == 1
+
+
+def test_the_all_time_answer_reads_the_race_of_the_player(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """It spans seasons, so it has no signup to read."""
+    player = league["player_ids"][0]
+    add_match(player, "undead", race=Race.UD)
+    add_match(player, "human", race=Race.HU, start_time=INSIDE + timedelta(hours=1))
+    set_signup_race(league["season_id"], player, Race.UD)
+
+    body = client.get(f"/users/{player}/ladder", headers=auth_headers).json()
+
+    assert [match["w3c_match_id"] for match in body["matches"]] == ["human"]
 
 
 def test_a_match_on_another_race_is_practice(
