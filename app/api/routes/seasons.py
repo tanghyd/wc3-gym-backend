@@ -8,7 +8,7 @@ from app.core.exceptions import BadRequestError
 from app.core.query import QueryUtil
 from app.models.season import SeasonCreate, SeasonPublic, SeasonUpdate
 from app.models.user import UserListPublic
-from app.models.w3c_ladder_match import LadderSyncResult
+from app.models.w3c_ladder_match import LadderSyncResult, SeasonLadder
 from app.models.w3c_stats import W3CSyncResult
 
 logger = logging.getLogger(__name__)
@@ -154,3 +154,12 @@ def sync_ladder_season_signups(
     The client calls again with next_offset until it answers null.
     """
     return service.sync_season(season_id, offset=offset, limit=limit)
+
+
+@router.get(
+    "/seasons/{season_id}/ladder",
+    dependencies=[Depends(require_admin)],
+)
+def get_season_ladder(season_id: int, service: LadderServiceDep) -> SeasonLadder:
+    """The ladder of a season: its teams, its players and its hours."""
+    return service.season_ladder(season_id)

@@ -92,6 +92,7 @@ class UserReduced(UserBase):
     discordId: Annotated[str | None, NumToStr] = None
     race: Annotated[str | None, EnumValue] = None
     w3c_synced_at: datetime | None = None
+    ladder_synced_at: datetime | None = None
 
     @classmethod
     def from_user_reduced(cls, user: User | None) -> Self | None:
@@ -110,6 +111,7 @@ class UserReduced(UserBase):
             country=user.country,
             fantasy_tier=user.fantasy_tier,
             w3c_synced_at=user.w3c_synced_at,
+            ladder_synced_at=user.ladder_synced_at,
         )
 
     def to_dict(self) -> dict[str, Any]:
