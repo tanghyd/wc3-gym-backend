@@ -124,7 +124,7 @@ def test_our_numbers_match_wc3_no(
     state = oracle()
     service: W3CService = state["service"]
 
-    matches = service.get_player_matches(battle_tag, state["season"], START)
+    matches, _ = service.walk_player_matches(battle_tag, state["season"], START)
     mine = [
         row
         for row in matches

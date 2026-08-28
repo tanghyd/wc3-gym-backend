@@ -101,6 +101,8 @@ class LadderPlayer(SQLModel):
     vs_race: dict[str, list[int]] = {}
     # The rules of core.achievements this player earned, worth most first
     achievements: list[Achievement] = []
+    # The oldest ladder sync stamp of the w3champions seasons this scope needs
+    synced_at: datetime | None = None
 
 
 class LadderTeam(SQLModel):
@@ -129,7 +131,7 @@ class LadderSeason(SQLModel):
     id: int
     start_date: IsoDate | None = None
     end_date: IsoDate | None = None
-    # When the last chunk of a ladder sync of this season finished
+    # The oldest ladder sync stamp of the roster, null while one is unread
     synced_at: datetime | None = None
 
 

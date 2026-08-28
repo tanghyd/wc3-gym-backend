@@ -25,6 +25,7 @@ from app.core.achievements import ACHIEVEMENTS
 from app.core.db import Session
 from app.models.enums import Race
 from app.models.ladder_achievement import LadderAchievement, default_rows
+from app.models.ladder_sync import LadderSync
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.user import User
@@ -74,6 +75,7 @@ def add_match(
     user_id: int,
     match_id: str,
     start_time: datetime = INSIDE,
+    wc3_season: int = 25,
     duration_s: int = 600,
     won: bool = True,
     opp_race: Race = Race.HU,
@@ -91,7 +93,7 @@ def add_match(
             W3CLadderMatch(
                 w3c_match_id=match_id,
                 user_id=user_id,
-                wc3_season=25,
+                wc3_season=wc3_season,
                 start_time=start_time,
                 duration_s=duration_s,
                 map_name="Last Refuge",
@@ -103,6 +105,20 @@ def add_match(
                 won=won,
                 mmr_before=mmr_before,
                 mmr_after=mmr_after,
+            )
+        )
+        session.commit()
+
+
+def stamp_ladder(user_id: int, wc3_season: int, synced_at: datetime) -> None:
+    """One ladder sync ledger row, as a finished sync leaves it."""
+    with Session() as session:
+        session.add(
+            LadderSync(
+                user_id=user_id,
+                wc3_season=wc3_season,
+                synced_at=synced_at,
+                complete=True,
             )
         )
         session.commit()
@@ -427,22 +443,55 @@ def test_the_season_carries_every_achievement_rule_once(
     assert body["achievement_rules"] == [asdict(rule) for rule in ACHIEVEMENTS]
 
 
-def test_the_season_carries_the_stamp_of_its_last_ladder_sync(
+def test_the_season_stamp_is_the_oldest_of_the_roster(
     client: Client, auth_headers: dict[str, str], league: dict[str, Any]
 ) -> None:
-    """The stamp is the season's own, so an unsynced season reads as unsynced."""
-    assert (
-        ladder_of(client, auth_headers, league["season_id"])["season"]["synced_at"]
-        is None
-    )
-    stamped = datetime(2026, 3, 1, 12, 30)
-    with Session() as session:
-        session.get(Season, league["season_id"]).ladder_synced_at = stamped
-        session.commit()
+    """Everyone is at least this fresh, which is what the page may claim."""
+    add_match(league["player_ids"][0], "one")
+    oldest = datetime(2026, 3, 1, 12, 30)
+    for index, player in enumerate(league["player_ids"]):
+        stamp_ladder(player, 25, oldest + timedelta(hours=index))
 
     body = ladder_of(client, auth_headers, league["season_id"])
 
-    assert body["season"]["synced_at"] == stamped.isoformat()
+    assert body["season"]["synced_at"] == oldest.isoformat()
+    assert (
+        player_of(body, league["player_ids"][1])["synced_at"]
+        == (oldest + timedelta(hours=1)).isoformat()
+    )
+
+
+def test_a_season_with_a_player_never_read_is_unsynced(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """One unread player is a season the page must not call synced."""
+    add_match(league["player_ids"][0], "one")
+    for player in league["player_ids"][:-1]:
+        stamp_ladder(player, 25, datetime(2026, 3, 1, 12, 30))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["season"]["synced_at"] is None
+    assert player_of(body, league["player_ids"][-1])["synced_at"] is None
+
+
+def test_a_player_short_of_one_season_of_the_window_is_unsynced(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The window sits in two w3champions seasons, so one stamp is not enough."""
+    player = league["player_ids"][0]
+    add_match(player, "one")
+    add_match(player, "two", start_time=INSIDE + timedelta(days=1), wc3_season=24)
+    stamp_ladder(player, 25, datetime(2026, 3, 1, 12, 30))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert player_of(body, player)["synced_at"] is None
+    stamp_ladder(player, 24, datetime(2026, 3, 1, 11, 0))
+    body = ladder_of(client, auth_headers, league["season_id"])
+    assert (
+        player_of(body, player)["synced_at"] == datetime(2026, 3, 1, 11, 0).isoformat()
+    )
 
 
 def test_every_earned_achievement_is_in_the_catalogue(
@@ -491,7 +540,7 @@ def test_the_season_per_day_covers_every_day_of_the_window(
     assert body["per_day"][2] == {"d": "2026-01-07", "g": 1}
 
 
-def test_the_season_answer_costs_eleven_statements(
+def test_the_season_answer_costs_thirteen_statements(
     app: FastAPI, league: dict[str, Any]
 ) -> None:
     """The count is a constant: it does not grow with the number of players."""
@@ -507,7 +556,7 @@ def test_the_season_answer_costs_eleven_statements(
     # The rules are a constant and the day counts are the total_games group
     assert body.achievement_rules == ACHIEVEMENTS
     assert sum(day.g for day in body.per_day) == 4
-    assert tally[0] == 11
+    assert tally[0] == 13
 
 
 # The achievement set: one instance per season, per rule.

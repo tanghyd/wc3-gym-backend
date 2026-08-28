@@ -1,6 +1,7 @@
 import logging
 import os
 import urllib.parse
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +36,16 @@ MATCH_SEASON_STEPS = 6
 
 # One connection pool for every w3champions call, so a sync pays no new TCP handshake.
 _session = requests.Session()
+
+
+def _by_start_time(
+    rows: dict[str, list[W3CLadderMatchCreate]],
+) -> list[W3CLadderMatchCreate]:
+    """Every parsed row of every page, oldest first."""
+    return sorted(
+        (row for match_rows in rows.values() for row in match_rows),
+        key=lambda row: row.start_time,
+    )
 
 
 def _is_throttled(response: requests.Response) -> bool:
@@ -130,24 +141,49 @@ class W3CService:
         return stats
 
     def get_player_matches(
+        self, battle_tag: str, seasons: Sequence[tuple[int, datetime]]
+    ) -> tuple[list[W3CLadderMatchCreate], dict[int, bool]]:
+        """The matches of these w3champions seasons, each read from its own `since`.
+
+        Answers the matches, and per season whether it was read to its end. A
+        throttle carries what was read before it on the refusal it raises.
+        """
+        rows: dict[str, list[W3CLadderMatchCreate]] = {}
+        complete: dict[int, bool] = {}
+        for season, since in seasons:
+            try:
+                complete[season] = self._page_season(battle_tag, season, since, rows)[1]
+            except W3CThrottledError as refusal:
+                # The seasons already read are worth keeping, so they ride out
+                # with the refusal. The season it cut short names none.
+                refusal.fetched = (_by_start_time(rows), complete)
+                raise
+        return _by_start_time(rows), complete
+
+    def walk_player_matches(
         self, battle_tag: str, season: int, since: datetime
-    ) -> list[W3CLadderMatchCreate]:
+    ) -> tuple[list[W3CLadderMatchCreate], dict[int, bool]]:
         """Every 1v1 match this player started at or after `since`.
 
         Pages the season newest first and steps back a season until a page
-        older than `since` is seen, at most MATCH_SEASON_STEPS times.
+        older than `since` is seen, at most MATCH_SEASON_STEPS times. This is
+        the first read of a window, which has no stored match to name the
+        w3champions seasons it sits in.
         """
         rows: dict[str, list[W3CLadderMatchCreate]] = {}
+        complete: dict[int, bool] = {}
         for step in range(MATCH_SEASON_STEPS + 1):
             current = season - step
             if current < 0:
                 break
+            older, complete[current] = self._page_season(
+                battle_tag, current, since, rows
+            )
             # A season with no match says nothing about the ones below it, so
             # only a page older than `since` ends the walk before the cap
-            if self._page_season(battle_tag, current, since, rows):
+            if older:
                 break
-        matches = [row for match_rows in rows.values() for row in match_rows]
-        return sorted(matches, key=lambda row: row.start_time)
+        return _by_start_time(rows), complete
 
     def _page_season(
         self,
@@ -155,8 +191,9 @@ class W3CService:
         season: int,
         since: datetime,
         rows: dict[str, list[W3CLadderMatchCreate]],
-    ) -> bool:
-        """Page one season into `rows`. Answers whether `since` was reached.
+    ) -> tuple[bool, bool]:
+        """Page one season into `rows`. Answers whether a match older than
+        `since` was seen, and whether the season was read that far or to its end.
 
         Matches are keyed by their w3champions id, so a match that arrives at
         the head between two calls cannot land twice.
@@ -177,7 +214,7 @@ class W3CService:
             )
             page = (body or {}).get("matches") or []
             if not page:
-                return False
+                return False, True
             oldest = None
             for match in page:
                 parsed = self.parse_match(match)
@@ -187,9 +224,9 @@ class W3CService:
                 start = parsed[0].start_time
                 oldest = start if oldest is None else min(oldest, start)
             if oldest is not None and oldest < since:
-                return True
+                return True, True
             if len(page) < MATCH_PAGE_SIZE:
-                return False
+                return False, True
             offset += len(page)
 
     def parse_match(self, match: dict[str, Any]) -> list[W3CLadderMatchCreate]:

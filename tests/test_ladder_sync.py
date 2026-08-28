@@ -16,7 +16,9 @@ from httpx2 import Client
 from sqlalchemy import func, select
 
 from app.core.db import Session
+from app.core.exceptions import W3CThrottledError
 from app.models.enums import Race
+from app.models.ladder_sync import LadderSync
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.user import User, UserCreate, UserReduced
@@ -24,7 +26,7 @@ from app.models.w3c_ladder_match import W3CLadderMatch
 from app.services import w3c as w3c_module
 from app.services.ladder import LadderService
 from app.services.users import UserService
-from app.services.w3c import W3CService
+from app.services.w3c import THROTTLED_MESSAGE, W3CService
 
 FIXTURES = Path(__file__).parent / "data" / "w3c"
 
@@ -48,15 +50,25 @@ PSIKE = fixture("psike_1331_season25")
 class FakeW3C:
     """W3Champions with a fixed set of matches per season, and a call log."""
 
-    def __init__(self, by_season: dict[int, list[dict[str, Any]]]) -> None:
+    def __init__(
+        self,
+        by_season: dict[int, list[dict[str, Any]]],
+        throttle_on: int | None = None,
+    ) -> None:
         self.by_season = by_season
+        self.throttle_on = throttle_on
         self.calls: list[tuple[int, int]] = []
+        # The `since` each season was last paged from, which is what makes a
+        # read of the open season incremental
+        self.since: dict[int, datetime] = {}
 
     def send_request(
         self, method: str, url: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         season, offset = params["season"], params["offset"]
         self.calls.append((season, offset))
+        if season == self.throttle_on:
+            raise W3CThrottledError(THROTTLED_MESSAGE)
         matches = self.by_season.get(season, [])
         return {
             "matches": matches[offset : offset + params["pageSize"]],
@@ -71,11 +83,25 @@ def serve(
     monkeypatch: pytest.MonkeyPatch,
     by_season: dict[int, list[dict[str, Any]]],
     page_size: int = 100,
+    throttle_on: int | None = None,
 ) -> FakeW3C:
-    fake = FakeW3C(by_season)
+    fake = FakeW3C(by_season, throttle_on)
+    paged = W3CService._page_season
+
+    def page(
+        self: W3CService,
+        battle_tag: str,
+        season: int,
+        since: datetime,
+        rows: dict[str, Any],
+    ) -> tuple[bool, bool]:
+        fake.since[season] = since
+        return paged(self, battle_tag, season, since, rows)
+
     monkeypatch.setattr(w3c_module, "MATCH_PAGE_SIZE", page_size)
     monkeypatch.setattr(W3CService, "send_request", fake.send_request)
     monkeypatch.setattr(W3CService, "current_season", lambda self: W3C_SEASON)
+    monkeypatch.setattr(W3CService, "_page_season", page)
     return fake
 
 
@@ -113,9 +139,29 @@ def store_match(user_id: int, season: int, start_time: datetime) -> None:
         session.commit()
 
 
-def stamp_of(season_id: int) -> datetime | None:
+def ledger_of(user_id: int) -> dict[int, LadderSync]:
+    """What the sync has recorded for this player, by w3champions season."""
     with Session() as session:
-        return session.get(Season, season_id).ladder_synced_at
+        return {
+            row.wc3_season: row
+            for row in session.scalars(
+                select(LadderSync).where(LadderSync.user_id == user_id)
+            )
+        }
+
+
+def mark(user_id: int, season: int, complete: bool) -> None:
+    """A ledger row as an earlier run left it."""
+    with Session() as session:
+        session.add(
+            LadderSync(
+                user_id=user_id,
+                wc3_season=season,
+                synced_at=datetime(2026, 3, 1),
+                complete=complete,
+            )
+        )
+        session.commit()
 
 
 def stored() -> list[W3CLadderMatch]:
@@ -204,7 +250,7 @@ def test_the_paging_stops_at_the_first_page_older_than_since(
     since = datetime(2026, 7, 30)
     fake = serve(monkeypatch, {W3C_SEASON: THANKS}, page_size=10)
 
-    W3CService().get_player_matches("thanks#11187", W3C_SEASON, since)
+    W3CService().get_player_matches("thanks#11187", [(W3C_SEASON, since)])
 
     last = started_before(THANKS, since)
     assert fake.calls == [(W3C_SEASON, offset) for offset in range(0, last + 1, 10)]
@@ -220,9 +266,10 @@ def test_the_walk_reads_past_the_seasons_the_player_sat_out(
         page_size=10,
     )
 
-    rows = W3CService().get_player_matches("thanks#11187", W3C_SEASON, SINCE)
+    rows, complete = W3CService().walk_player_matches("thanks#11187", W3C_SEASON, SINCE)
 
     assert fake.seasons() == [25, 24, 23, 23, 23, 22, 21, 20, 19]
+    assert set(complete) == {25, 24, 23, 22, 21, 20, 19}
     assert len({row.w3c_match_id for row in rows}) == 25
 
 
@@ -231,7 +278,7 @@ def test_the_walk_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
     every_season = dict.fromkeys(range(W3C_SEASON + 1), THANKS[:5])
     fake = serve(monkeypatch, every_season, page_size=10)
 
-    W3CService().get_player_matches("thanks#11187", W3C_SEASON, SINCE)
+    W3CService().walk_player_matches("thanks#11187", W3C_SEASON, SINCE)
 
     assert fake.seasons() == [25, 24, 23, 22, 21, 20, 19]
 
@@ -280,11 +327,11 @@ def test_a_player_w3champions_refuses_does_not_stop_the_others(
     real = W3CService.get_player_matches
 
     def refuse_one(
-        self: W3CService, battle_tag: str, season: int, since: datetime
-    ) -> list[Any]:
+        self: W3CService, battle_tag: str, seasons: list[tuple[int, datetime]]
+    ) -> tuple[list[Any], dict[int, bool]]:
         if battle_tag == "Psike#1331":
             raise Exception("Request failed with status code 404: player not found")
-        return real(self, battle_tag, season, since)
+        return real(self, battle_tag, seasons)
 
     monkeypatch.setattr(W3CService, "get_player_matches", refuse_one)
 
@@ -310,10 +357,10 @@ def test_a_player_with_no_matches_is_stamped(
     assert stored() == []
 
 
-def test_the_season_sync_starts_the_walk_at_the_season_its_window_ends_in(
+def test_the_season_sync_reads_the_seasons_its_window_sits_in(
     app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A backfill pages the seasons its window sits in, not the newest ones."""
+    """The stored matches of the window name the seasons, so nothing else is read."""
     player = seeded["player_ids"][0]
     sign_up(seeded["season_id"], player)
     # The seeded season runs 2026-01-05 to 2026-02-27
@@ -323,7 +370,8 @@ def test_the_season_sync_starts_the_walk_at_the_season_its_window_ends_in(
 
     LadderService().sync_season(seeded["season_id"])
 
-    assert fake.seasons() == [20, 19, 18, 17, 16, 15, 14]
+    assert fake.seasons() == [20]
+    assert ledger_of(player)[20].complete is True
 
 
 def test_a_season_still_running_starts_the_walk_at_the_pinned_season(
@@ -355,19 +403,103 @@ def test_the_season_sync_starts_at_the_pin_while_nothing_is_stored(
     assert fake.seasons()[0] == W3C_SEASON
 
 
-def test_the_season_is_stamped_by_the_last_chunk_alone(
+def test_a_closed_season_read_to_its_end_is_never_read_again(
     app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A half-finished backfill must not read as a synced season."""
-    for player in seeded["player_ids"][:2]:
-        sign_up(seeded["season_id"], player)
-    serve(monkeypatch, {})
+    """A resync of an old season costs no w3champions call."""
+    player = seeded["player_ids"][0]
+    sign_up(seeded["season_id"], player)
+    store_match(player, W3C_SEASON - 1, datetime(2026, 1, 10))
+    fake = serve(monkeypatch, {})
 
-    assert stamp_of(seeded["season_id"]) is None
-    LadderService().sync_season(seeded["season_id"], limit=1)
-    assert stamp_of(seeded["season_id"]) is None
-    LadderService().sync_season(seeded["season_id"], offset=1, limit=1)
-    assert stamp_of(seeded["season_id"]) is not None
+    LadderService().sync_season(seeded["season_id"])
+    assert fake.seasons() == [W3C_SEASON - 1]
+    assert ledger_of(player)[W3C_SEASON - 1].complete is True
+    fake.calls.clear()
+    LadderService().sync_season(seeded["season_id"])
+
+    assert fake.calls == []
+
+
+def test_a_season_read_only_in_part_is_read_again_in_full(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unfinished walk left no matches to trust, so the window is read again."""
+    player = seeded["player_ids"][0]
+    sign_up(seeded["season_id"], player)
+    store_match(player, W3C_SEASON - 1, datetime(2026, 1, 10))
+    mark(player, W3C_SEASON - 1, complete=False)
+    fake = serve(monkeypatch, {})
+
+    LadderService().sync_season(seeded["season_id"])
+
+    assert fake.seasons() == [W3C_SEASON - 1]
+    # The whole window, not the stamp the unfinished run left
+    assert fake.since[W3C_SEASON - 1] == datetime(2026, 1, 5)
+
+
+def test_a_walk_that_stops_early_is_written_as_unfinished(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ledger records what the pager reached, so a short read is no skip."""
+    player = seeded["player_ids"][0]
+    sign_up(seeded["season_id"], player)
+    store_match(player, W3C_SEASON - 1, datetime(2026, 1, 10))
+    serve(monkeypatch, {})
+    monkeypatch.setattr(W3CService, "_page_season", lambda *args: (False, False))
+
+    LadderService().sync_season(seeded["season_id"])
+
+    assert ledger_of(player)[W3C_SEASON - 1].complete is False
+
+
+def test_a_throttle_keeps_the_seasons_read_before_it(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The finished season is written and stamped; the refused one is not."""
+    thanks = add_player("thanks", "thanks#11187")
+    sign_up(seeded["season_id"], thanks.id)
+    # The window sits in two w3champions seasons, read newest first
+    store_match(thanks.id, W3C_SEASON, datetime(2026, 1, 10))
+    store_match(thanks.id, W3C_SEASON - 1, datetime(2026, 1, 11))
+    serve(monkeypatch, {W3C_SEASON: THANKS[:3]}, throttle_on=W3C_SEASON - 1)
+
+    result = LadderService().sync_season(seeded["season_id"])
+
+    assert [failure.reason for failure in result.failed] == [THROTTLED_MESSAGE]
+    assert len(stored()) == 5
+    ledger = ledger_of(thanks.id)
+    assert ledger[W3C_SEASON].complete is True
+    assert W3C_SEASON - 1 not in ledger
+
+
+def test_the_open_season_is_read_again_from_its_own_stamp(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second read asks for the matches since the first one, and no more."""
+    thanks = add_player("thanks", "thanks#11187")
+    fake = serve(monkeypatch, {W3C_SEASON: THANKS[:3]})
+
+    LadderService().sync_users([thanks], SINCE)
+    assert fake.since[W3C_SEASON] == SINCE
+    stamp = ledger_of(thanks.id)[W3C_SEASON].synced_at
+    LadderService().sync_users([thanks], SINCE)
+
+    assert fake.since[W3C_SEASON] == stamp
+
+
+def test_the_first_sync_of_a_window_walks_and_writes_what_it_found(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No stored match names a season, so the walk discovers them."""
+    player = seeded["player_ids"][0]
+    sign_up(seeded["season_id"], player)
+    fake = serve(monkeypatch, {W3C_SEASON - 2: THANKS[:3]})
+
+    LadderService().sync_season(seeded["season_id"])
+
+    assert fake.seasons()[0] == W3C_SEASON
+    assert set(ledger_of(player)) == set(fake.seasons())
 
 
 # The route. It runs in chunks, because one request per season would outlive
