@@ -44,21 +44,25 @@ Port 5432 is the session pooler, which behaves like a direct connection and is t
 
 ## Where the backend runs
 
-One code, two mechanisms, five places. Docker runs the image with `alembic upgrade head` at every start; Vercel runs `api/index.py` as a function and migrates in the build. Every recipe that reaches a place takes the same two words, a path and an environment. A cell that says "refused" is a recipe that exits 2 with the reason, not a missing recipe.
+One code, two mechanisms, three places you can reach from a laptop. Docker runs the image with `alembic upgrade head` at every start; Vercel runs `api/index.py` as a function and migrates in the build.
 
-| Recipe | `local` | `azure staging` | `azure prod` | `vercel prod` | `vercel staging` |
-|---|---|---|---|---|---|
-| `just deploy` | refused: `just up` | pins the box to a GHCR tag over SSH | refused: Portainer | `vercel deploy --prod` from the working tree | `vercel deploy`, a preview |
-| `just status` | the containers | health, pinned image, `compose ps` | refused | `vercel ls --prod` | `vercel ls` |
-| `just logs` | `docker logs -f` | `compose logs -f` over SSH | refused | `vercel logs --prod` | refused: no fixed URL |
-| `just db migrate` | alembic | alembic inside the container over SSH | refused | alembic on the pooler URL | the template and the shared database |
-| `just db status` | alembic | over SSH | refused | alembic | alembic |
-| `just db seed` | the private seed repo | the seed repo, loaded inside the container | refused | the seed repo | the seed repo |
-| `just db url` | `LOCAL_DB_URL` | refused: no URL from a laptop | refused | `VERCEL_PROD_DB_URL` | `VERCEL_STAGING_DB_URL` |
+**One just module per place.** A recipe exists in a module only if it makes sense there, so `just azure --list` is the list of what the box supports, and nothing else. Production is EAShibby's box, reached only through Portainer, so it has no module and no recipes.
 
-`local` is the default where a recipe has one: `just logs` is `just logs local`. The values come from `.env`, copied from `.env.example` and gitignored: the three database URLs and `AZURE_STAGING_HOST`, which is `terraform -chdir=infra output -raw fqdn` in the gym-root workspace. `azure prod` is EAShibby's box, reached only through Portainer, so every recipe refuses it. A push to `main` deploys `vercel prod` on its own; `just deploy vercel prod` is the same deploy from a working tree.
+| | `just local` | `just azure` | `just vercel` |
+|---|---|---|---|
+| Where | Docker on this machine | the Terraform staging box, over SSH | the Vercel project |
+| Runs | the image, built from your working tree | the published GHCR image | `api/index.py` as a function |
+| `deploy` | — build with `up` | pins the box to an image tag | `vercel deploy`, prod or a preview |
+| `logs`, `status` | `docker logs`, `docker ps` | `compose logs`, `compose ps` over SSH | `vercel logs`, `vercel ls` |
+| `migrate`, `alembic` | against `LOCAL_DB_URL` | inside the backend container | against the pooler URL |
+| `seed` | the private seed repo | the seed repo, loaded in the container | the seed repo |
+| Only here | `up`, `down`, `restart`, `psql`, `serve`, `import-xlsx`, `revision`, `reset` | — | `list`, `drop` (the preview databases), `url` |
 
-The gym-root workspace owns what spans two repositories: Terraform for the Azure box, the frontend, and `just azure deploy`, which calls `just deploy azure staging` here for the backend half.
+`just vercel` takes an environment, `prod` by default: `just vercel migrate` is production, `just vercel migrate staging` is the preview project. A push to `main` deploys production on its own; `just vercel deploy` is the same deploy from a working tree.
+
+The values come from `.env`, copied from `.env.example` and gitignored: `LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`, and `AZURE_STAGING_HOST`, which is `terraform -chdir=infra output -raw fqdn` in the gym-root workspace.
+
+The gym-root workspace owns what spans two repositories: Terraform for the Azure box, the box files, and the frontend. Its `just azure deploy` calls `just azure deploy <tag>` here for the backend half.
 
 ## Deploying to Vercel
 
@@ -240,32 +244,33 @@ BOT_WEBHOOK_URL="http://host.docker.internal:3001/webhook/series-updated"
 
 ### Using just (Recommended)
 
-[just](https://github.com/casey/just) is a command runner. It reads recipes from the `justfile` in the repository root; the database recipes are the `db` module in `just/`. The dev dependencies install it (PyPI package `rust-just`), so after `uv sync` no separate install is needed — run recipes with `uv run just`:
+[just](https://github.com/casey/just) is a command runner. It reads recipes from the `justfile` in the repository root, which holds the code recipes and one module per place the backend runs, under `just/`. The dev dependencies install it (PyPI package `rust-just`), so after `uv sync` no separate install is needed — run recipes with `uv run just`:
 
 ```bash
-uv run just                        # list the recipes
-uv run just test                   # run the tests, as CI runs them
-uv run just lint                   # check formatting and lint, as CI runs them
-uv run just fmt                    # apply the formatting and lint fixes
+uv run just                          # list the recipes and the modules
+uv run just test                     # run the tests, as CI runs them
+uv run just lint                     # check formatting and lint, as CI runs them
+uv run just fmt                      # apply the formatting and lint fixes
 
-uv run just up                     # build the image, start Postgres and the backend in Docker
-uv run just restart                # start the containers again after a stop
-uv run just down                   # stop the containers
-uv run just psql                   # open psql on the local database
-uv run just serve                  # run the app as Vercel runs it, from the working tree
-uv run just import-xlsx            # import the S18 and S17 workbooks from tests/data
+uv run just up                       # build the image, start Postgres and the backend in Docker
+uv run just down                     # stop the containers
+uv run just logs                     # follow the backend log
+uv run just psql                     # open psql on the database
+uv run just serve                    # run the app as Vercel runs it, from the working tree
+uv run just local seed               # migrate, then load the private seed repo
+uv run just local revision "message" # write a migration for the current models
+uv run just local alembic current    # any alembic command against the database
 
-uv run just logs                   # follow the backend log; also `logs azure staging`, `logs vercel prod`
-uv run just status                 # show what runs; also `status azure staging`, `status vercel prod`
-uv run just deploy azure staging   # pin the box to the staging tag; also `deploy vercel prod`
+uv run just azure deploy sha-77f9280a  # pin the staging box to a published image tag
+uv run just azure logs                 # follow the backend log on the box
+uv run just azure seed                 # migrate the box, then load the seed repo
 
-uv run just db status local        # show the revision the database is on
-uv run just db migrate local       # bring a database up to date by hand
-uv run just db seed local          # migrate, then load the private seed repo
-uv run just db revision "message"  # write a migration for the current models
+uv run just vercel deploy            # deploy the working tree to production
+uv run just vercel migrate staging   # migrate the preview project
+uv run just vercel list              # list the preview databases
 ```
 
-`just db` lists the database recipes. Every recipe that names a place takes the same path and environment; "Where the backend runs" above is the table.
+`up`, `down`, `restart`, `logs`, `status`, `psql` and `serve` are aliases for the `local` recipes of the same name, because that is where the daily work happens. `just local --list`, `just azure --list` and `just vercel --list` show what each place supports; "Where the backend runs" above is the table.
 
 `up` covers the full PostgreSQL setup from above: on first use it creates the `gnl-net` Docker network and the `gnl-postgres` container with a named volume (`gnl-postgres-data`), so the database survives `down` and container removal. It then builds the image and starts it on port 5002. Run it again after a code change to rebuild and restart the backend.
 
@@ -275,7 +280,7 @@ The image is tagged `gnl-backend:local`. The tag means what it says: `just up` b
 
 The container starts with development-only values (`ADMIN_TOKEN=devtoken`, `JWT_SECRET_KEY=devsecret`). Log in with `devtoken`. Do not use these values outside local development. The backend accepts connections about 30 seconds after `up` returns.
 
-`serve` is the other way to run the code: `uvicorn api.index:app` from the working tree, with `DB_URL` from `.env`, no image and no migration at start. It is what Vercel runs, so use it to reproduce a Vercel-only fault. Migrate first with `just db migrate local`.
+`serve` is the other way to run the code: `uvicorn api.index:app` from the working tree, with `DB_URL` from `.env`, no image and no migration at start. It is what Vercel runs, so use it to reproduce a Vercel-only fault. Migrate first with `just local migrate`.
 
 If `just` is installed system-wide, the `uv run` prefix is optional.
 
@@ -315,7 +320,7 @@ uv run alembic current             # show the revision the database is on
 uv run alembic history             # list the revisions
 ```
 
-The `db` recipes wrap these by deployment path and environment: `just db status local`, `just db migrate vercel prod`, `just db seed azure staging`, `just db list vercel staging`, `just db drop vercel staging <database>`. `just db url <path> <env>` prints the URL a pair resolves to, from `.env` (`LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`), gitignored, copied from `.env.example`. The Azure staging box has no URL reachable from a laptop, so its recipes run alembic and the seed script inside the backend container over SSH.
+Each place wraps these in its own module: `just local migrate`, `just local alembic history`, `just vercel migrate staging`, `just azure migrate`. The URLs come from `.env` (`LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`), gitignored, copied from `.env.example`; `just vercel url staging` prints one. The Azure box has no URL reachable from a laptop, so its recipes run alembic and the seed script inside the backend container over SSH.
 
 ### DB_URL names the same database twice
 
@@ -415,11 +420,11 @@ backend/
 ├── uv.lock                 # Pinned dependency versions (managed by uv)
 ├── Dockerfile             # Docker image definition
 ├── vercel.json            # The Vercel build command, which migrates by environment
-├── justfile               # The commands: test, lint, fmt, the local stack, deploy, logs, status
-├── just/                  # The db module: migrate, seed, list, drop by path and environment
+├── justfile               # test, lint, fmt, and one module per place the backend runs
+├── just/                  # One module per place: local.just, azure.just, vercel.just
 ├── .env                   # Database URLs and the staging host; gitignored, copy .env.example
 ├── api/                   # The Vercel entry point and its preview-database choice
-├── scripts/               # Database helpers the just db recipes call
+├── scripts/               # Database helpers the just recipes call
 ├── tests/                 # pytest suite
 ├── app/
 │   ├── main.py            # The application factory, create_app
