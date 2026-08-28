@@ -7,23 +7,28 @@ compares.
 
 EXPECTED is the wc3.no GNL S18 table, read from the live page on
 2026-08-27, with the race each player is registered with. Its points column
-also carries achievement points, so the comparison rebuilds the ladder
-points from its own wins and losses.
+carries ladder points plus achievement points, so the comparison rebuilds
+the ladder points from its own wins and losses and adds core.achievements.
 
 The race is part of the scope, not decoration: wc3.no asks w3champions for
 one race per player (`playerRace`), and four of these players played other
 races beside their league race. Reading every race instead gives kovic 8/3
 where wc3.no shows 7/2, and LOSu2 19/22 where it shows 10/12.
+
+The rules that read a team take the same roster wc3.no takes: it reads
+`GET /teams/season/{id}` off the GNL backend, so the test does too.
 """
 
 import os
 from datetime import datetime
+from typing import Any
 
 import pytest
 import requests
 
-from app.core import ladder
+from app.core import achievements, ladder
 from app.models.enums import Race
+from app.models.w3c_ladder_match import W3CLadderMatchCreate
 from app.services.w3c import W3CService
 
 # The real function, captured before conftest blocks third party calls.
@@ -33,74 +38,158 @@ REAL_REQUEST = requests.Session.request
 START = datetime(2026, 7, 6)
 END = datetime(2026, 8, 9, 23, 59, 59, 999999)
 
-# battle tag, league race, wins, losses
+# GNL season 18 is season 4 on the GNL backend, the id wc3.no asks for.
+GNL_BACKEND = "https://backend.warcraft-gym.com"
+GNL_SEASON = "4"
+
+# battle tag, league race, wins, losses, the wc3.no points column
 EXPECTED = [
-    ("thanks#11187", Race.NE, 108, 117),
+    ("thanks#11187", Race.NE, 108, 117, 744),
     # 104/100, not the 103/100 the wc3.no table shows. Every offset from UTC-12 to
     # UTC+14, with the end date inside the window or outside it, was tried against
     # w3champions' own answer and none produces 103/100, while UTC with the end date
     # inside produces 104/100 exactly. His 215 matches are all Night Elf, all
     # distinct and all inside the window, and the race filter changes nothing. So
-    # the extra win is one wc3.no did not see, and w3champions is the source.
-    ("doctajones#11327", Race.NE, 104, 100),
-    ("Psike#1331", Race.UD, 60, 76),
-    ("ThreeWayKay#2610", Race.HU, 56, 58),
-    ("indrew613#1342", Race.OC, 40, 38),
-    ("Elusirei#2178", Race.NE, 39, 37),
-    ("Solanum#21803", Race.OC, 20, 6),
-    ("MrDrCooper#1551", Race.OC, 22, 5),
-    ("MIsTKy#2462", Race.HU, 29, 31),
-    ("Gunnar#1165", Race.HU, 22, 31),
-    ("ObnoxiousDMG#1727", Race.NE, 21, 6),
-    ("Sacktikkla#1398", Race.NE, 12, 15),
-    ("kovic#21111", Race.HU, 7, 2),
-    ("LOSu2#1716", Race.HU, 10, 12),
-    ("Elkiador#1553", Race.HU, 10, 14),
+    # the extra win is one wc3.no did not see, and w3champions is the source. The
+    # win is worth 3 points, so his total is expected 3 above the published 663.
+    ("doctajones#11327", Race.NE, 104, 100, 663 + 3),
+    ("Psike#1331", Race.UD, 60, 76, 378),
+    ("ThreeWayKay#2610", Race.HU, 56, 58, 334),
+    ("indrew613#1342", Race.OC, 40, 38, 250),
+    ("Elusirei#2178", Race.NE, 39, 37, 209),
+    ("Solanum#21803", Race.OC, 20, 6, 186),
+    ("MrDrCooper#1551", Race.OC, 22, 5, 181),
+    ("MIsTKy#2462", Race.HU, 29, 31, 159),
+    ("Gunnar#1165", Race.HU, 22, 31, 137),
+    ("ObnoxiousDMG#1727", Race.NE, 21, 6, 124),
+    ("Sacktikkla#1398", Race.NE, 12, 15, 86),
+    ("kovic#21111", Race.HU, 7, 2, 83),
+    ("LOSu2#1716", Race.HU, 10, 12, 72),
+    ("Elkiador#1553", Race.HU, 10, 14, 64),
 ]
 
 pytestmark = pytest.mark.skipif(
     os.getenv("W3C_ORACLE") != "1", reason="set W3C_ORACLE=1 to call w3champions"
 )
 
-_season: list[int] = []
+
+class RecordingService(W3CService):
+    """W3CService that also keeps the race w3champions reported unresolved.
+
+    The table stores the race a random player rolled, and wc3.no reads the
+    field before the roll, so its race badge buckets a random opponent under
+    Random. One fetch answers both.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.picked: dict[tuple[str, str], Race | None] = {}
+
+    def parse_match(self, match: dict[str, Any]) -> list[W3CLadderMatchCreate]:
+        for team in match.get("teams") or []:
+            for player in team.get("players") or []:
+                key = (match["id"], player["battleTag"].lower())
+                self.picked[key] = self.get_race_enum(player.get("race"))
+        return super().parse_match(match)
 
 
-def season(service: W3CService) -> int:
-    """The newest w3champions season, asked for once."""
-    if not _season:
-        _season.append(service.latest_season())
-    return _season[0]
+_state: dict[str, Any] = {}
 
 
-@pytest.mark.parametrize(("battle_tag", "race", "wins", "losses"), EXPECTED)
+def oracle() -> dict[str, Any]:
+    """The service, the w3champions season and the GNL roster, asked for once."""
+    if not _state:
+        service = RecordingService()
+        teams = requests.get(f"{GNL_BACKEND}/teams/season/{GNL_SEASON}").json()
+        roster = {
+            team["id"]: {
+                player["battleTag"].lower()
+                for player in team["player_by_season"].get(GNL_SEASON, [])
+            }
+            for team in teams
+        }
+        _state.update(
+            service=service,
+            season=service.latest_season(),
+            roster=roster,
+            everyone=set().union(*roster.values()),
+            team_of={tag: team for team, tags in roster.items() for tag in tags},
+            coaches=frozenset(
+                coach["battleTag"].lower()
+                for team in teams
+                for coach in team["coaches_by_season"].get(GNL_SEASON, [])
+            ),
+        )
+    return _state
+
+
+def unresolved(
+    rows: list[W3CLadderMatchCreate], picked: dict[tuple[str, str], Race | None]
+) -> list[W3CLadderMatchCreate]:
+    """The same matches with the opponent race wc3.no reads."""
+    return [
+        row.model_copy(
+            update={
+                "opp_race": picked[
+                    (row.w3c_match_id, (row.opp_battletag or "").lower())
+                ]
+            }
+        )
+        for row in rows
+    ]
+
+
+@pytest.mark.parametrize(("battle_tag", "race", "wins", "losses", "total"), EXPECTED)
 def test_our_numbers_match_wc3_no(
     monkeypatch: pytest.MonkeyPatch,
     battle_tag: str,
     race: Race,
     wins: int,
     losses: int,
+    total: int,
 ) -> None:
-    """Wins, losses and ladder points over the GNL S18 window."""
+    """Wins, losses, ladder points and the total over the GNL S18 window."""
     monkeypatch.setattr(requests.Session, "request", REAL_REQUEST)
-    service = W3CService()
+    state = oracle()
+    service: RecordingService = state["service"]
 
-    matches = service.get_player_matches(battle_tag, season(service), START)
+    matches = service.get_player_matches(battle_tag, state["season"], START)
     mine = [
         row
         for row in matches
         if row.battleTag.lower() == battle_tag.lower()
         and row.race is race
         and START <= row.start_time <= END
+        and ladder.counted(row.duration_s)
     ]
     totals = ladder.totals(mine)
+
+    tag = battle_tag.lower()
+    opponents = frozenset(state["everyone"] - state["roster"][state["team_of"][tag]])
+    coaches = state["coaches"]
+    coach = tag in coaches
+    picked = unresolved(mine, service.picked)
+    theirs = achievements.earned(picked, totals.points, opponents, coaches, coach)
+    ours = achievements.earned(mine, totals.points, opponents, coaches, coach)
 
     expected_points = ladder.WIN_POINTS * wins + ladder.LOSS_POINTS * losses
     print(
         f"{battle_tag:20} {race.value:6} ours {totals.wins:4}W {totals.losses:4}L "
-        f"{totals.points:5}p   wc3.no {wins:4}W {losses:4}L {expected_points:5}p"
+        f"{totals.points:5}p + {achievements.total_points(theirs):4}a = "
+        f"{totals.points + achievements.total_points(theirs):5}   wc3.no {total:5}\n"
+        f"{'':29}{', '.join(f'{a.id}:{a.points}' for a in theirs)}"
     )
     assert (totals.wins, totals.losses, totals.points) == (
         wins,
         losses,
         expected_points,
     )
+    assert totals.points + achievements.total_points(theirs) == total
+
+    # The race badge is the only rule the two feeds can disagree on: it counts
+    # a random opponent under the race he rolled here and under Random there.
+    gap = achievements.total_points(ours) - achievements.total_points(theirs)
+    changed = {item.id for item in ours} ^ {item.id for item in theirs}
+    changed |= {item.id for item in ours if item not in theirs}
+    print(f"{'':29}stored races pay {gap:+} more, on {sorted(changed) or 'nothing'}")
+    assert changed <= {rule.id for rule in achievements.RACE_ACHIEVEMENTS.values()}
