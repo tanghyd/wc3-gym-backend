@@ -9,7 +9,8 @@ core.ladder.MIN_DURATION_S, of the players asked for, inside the window
 asked for.
 """
 
-from datetime import datetime, timedelta
+from dataclasses import asdict
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -18,6 +19,7 @@ from httpx2 import Client
 from sqlalchemy import case, func, select
 
 from app.core import ladder
+from app.core.achievements import ACHIEVEMENTS
 from app.core.db import Session
 from app.models.enums import Race
 from app.models.relationships import DBUserSeasonSignup
@@ -352,6 +354,63 @@ def test_by_hour_buckets_the_matches_by_utc_weekday_and_hour(
     assert sum(sum(row) for row in body["by_hour"]) == 2
 
 
+def test_the_season_carries_every_achievement_rule_once(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The catalogue is core.achievements, so no client copies the rules."""
+    add_match(league["player_ids"][0], "one")
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["achievement_rules"] == [asdict(rule) for rule in ACHIEVEMENTS]
+
+
+def test_every_earned_achievement_is_in_the_catalogue(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """A client draws the locked rules by subtracting the earned ids."""
+    player = league["player_ids"][0]
+    add_match(player, "won")
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    earned = {rule["id"] for rule in player_of(body, player)["achievements"]}
+    assert earned == {"win_first"}
+    assert earned <= {rule["id"] for rule in body["achievement_rules"]}
+
+
+def test_the_season_per_day_counts_a_shared_match_once(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The series adds up to total_games, which the header shows."""
+    one, two = league["player_ids"][0], league["player_ids"][2]
+    add_match(one, "shared", won=True)
+    add_match(two, "shared", won=False)
+    add_match(one, "own", start_time=INSIDE + timedelta(days=2))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 2
+    assert sum(day["g"] for day in body["per_day"]) == body["total_games"]
+    played = {day["d"]: day["g"] for day in body["per_day"] if day["g"]}
+    assert played == {"2026-01-07": 1, "2026-01-09": 1}
+
+
+def test_the_season_per_day_covers_every_day_of_the_window(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """A day nobody played reads 0, so the chart has no gap."""
+    add_match(league["player_ids"][0], "one")
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    span = (date(2026, 2, 27) - date(2026, 1, 5)).days + 1
+    assert len(body["per_day"]) == span
+    assert body["per_day"][0] == {"d": "2026-01-05", "g": 0}
+    assert body["per_day"][-1] == {"d": "2026-02-27", "g": 0}
+    assert body["per_day"][2] == {"d": "2026-01-07", "g": 1}
+
+
 def test_the_season_answer_costs_nine_statements(
     app: FastAPI, league: dict[str, Any]
 ) -> None:
@@ -365,6 +424,9 @@ def test_the_season_answer_costs_nine_statements(
         body = LadderService().season_ladder(league["season_id"])
 
     assert body.total_games == 4
+    # The rules are a constant and the day counts are the total_games group
+    assert body.achievement_rules == ACHIEVEMENTS
+    assert sum(day.g for day in body.per_day) == 4
     assert tally[0] == 9
 
 
