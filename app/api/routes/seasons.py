@@ -113,8 +113,11 @@ def remove_maps(
 def add_user_signup(
     season_id: int, data: Annotated[dict, Body()], service: SeasonServiceDep
 ) -> SeasonPublic:
-    """Add signup users to season by providing a list of user ids."""
-    return service.add_user_signup(season_id, data.get("user_ids"))
+    """Add signup users to season by providing a list of user ids.
+
+    An optional "race" names the race they registered on for this season.
+    """
+    return service.add_user_signup(season_id, data.get("user_ids"), data.get("race"))
 
 
 @router.delete("/seasons/{season_id}/signups", dependencies=[Depends(require_admin)])

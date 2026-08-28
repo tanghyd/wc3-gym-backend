@@ -123,6 +123,8 @@ class UserListPublic(UserReduced):
 
     w3c_stats: Annotated[list[W3CStatsPublic], NoneToList] = []
     signup_seasons: Annotated[list[SeasonPublic], NoneToList] = []
+    # The race of one signup, filled by the signups answer of a single season
+    signup_race: Annotated[str | None, EnumValue] = None
 
     @classmethod
     def from_user(cls, user: User | None) -> Self | None:

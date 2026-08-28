@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload, noload, selectinload
 
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.query import QueryElement, QueryUtil
+from app.models.enums import Race
 from app.models.map import Map
 from app.models.relationships import DBMapSeason, DBUserSeasonSignup
 from app.models.season import Season, SeasonCreate, SeasonPublic, SeasonUpdate
@@ -204,11 +205,15 @@ class SeasonService(BaseService):
             session.flush()
             return SeasonPublic.from_season(season)
 
-    def add_user_signup(self, season_id: int, user_ids: list[int]) -> SeasonPublic:
+    def add_user_signup(
+        self, season_id: int, user_ids: list[int], race: str | None = None
+    ) -> SeasonPublic:
+        """Sign these users up, all on the race the caller names, if any."""
         with self.get_session() as session:
             season = session.get(Season, season_id)
             if not season:
                 raise NotFoundError(f"Season not found by id: {season_id}")
+            signup_race = self._race(race)
             for user_id in user_ids:
                 user = session.get(User, user_id)
                 if not user:
@@ -216,11 +221,25 @@ class SeasonService(BaseService):
                 try:
                     # The primary key decides: a duplicate link is already there
                     with session.begin_nested():
-                        session.add(DBUserSeasonSignup(season=season, user=user))
+                        session.add(
+                            DBUserSeasonSignup(
+                                season=season, user=user, race=signup_race
+                            )
+                        )
                 except IntegrityError:
                     logger.debug(f"User {user_id} is already signed up to {season_id}")
             session.flush()
             return SeasonPublic.from_season(season)
+
+    @staticmethod
+    def _race(race: str | None) -> Race | None:
+        """The race a signup names, read the way a person writes it."""
+        if not race:
+            return None
+        try:
+            return Race.from_text(race)
+        except ValueError as error:
+            raise BadRequestError(str(error)) from None
 
     def remove_user_signup(self, season_id: int, user_ids: list[int]) -> SeasonPublic:
         with self.get_session() as session:
@@ -273,6 +292,7 @@ class SeasonService(BaseService):
                 if signup.user:
                     user_public = UserListPublic.from_user(signup.user)
                     if user_public:
+                        user_public.signup_race = signup.race
                         result.append(user_public)
 
             return result

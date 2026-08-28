@@ -87,7 +87,7 @@ class LadderService:
 
             roster = _roster(session, season_id)
 
-            scope = _scope([row.user_id for row in roster], _window(season))
+            scope = _scope([row.user_id for row in roster], _window(season), season_id)
             totals = _totals(session, scope)
             days = _per_day(session, scope)
             races = _vs_race(session, scope)
@@ -141,7 +141,7 @@ class LadderService:
                     raise NotFoundError("Season not found")
                 window = _window(season)
 
-            scope = _scope([user_id], window)
+            scope = _scope([user_id], window, season_id)
             totals = _totals(session, scope)
             roster = _roster(session, season_id) if season_id is not None else []
             earned = _earned(session, scope, roster, totals, season_id)
@@ -356,7 +356,7 @@ def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
     ).all()
 
 
-def _league_race() -> ColumnElement[bool]:
+def _league_race(season_id: int | None) -> ColumnElement[bool]:
     """A player scores on the race he selected in game, and on no other.
 
     The league locks a player to one race, so a match on another race is
@@ -364,20 +364,37 @@ def _league_race() -> ColumnElement[bool]:
     player registered RANDOM scores on his random picks alone and a player
     registered on a normal race gets no random pick that rolled it. This is
     the rule wc3.no scores by, proven by tests/test_ladder_oracle.
+
+    The race is the one he signed up with that season, so a past season keeps
+    its numbers when he registers on another race later. A signup that names
+    no race falls back to `users.race`, and so does the all-time answer, which
+    spans seasons and has no signup to read.
     """
     race = select(User.race).where(User.id == W3CLadderMatch.user_id).scalar_subquery()
+    if season_id is not None:
+        signup = (
+            select(DBUserSeasonSignup.race)
+            .where(
+                DBUserSeasonSignup.user_id == W3CLadderMatch.user_id,
+                DBUserSeasonSignup.season_id == season_id,
+            )
+            .scalar_subquery()
+        )
+        race = func.coalesce(signup, race)
     return W3CLadderMatch.race == race
 
 
 def _scope(
-    user_ids: Sequence[int], window: tuple[datetime, datetime] | None
+    user_ids: Sequence[int],
+    window: tuple[datetime, datetime] | None,
+    season_id: int | None,
 ) -> list[ColumnElement[bool]]:
     """The rows one ladder answer reads: these players, on their league race,
     in this window, and only matches long enough to be a game."""
     where: list[ColumnElement[bool]] = [
         W3CLadderMatch.user_id.in_(user_ids),
         ladder.counted_clause(W3CLadderMatch.duration_s),
-        _league_race(),
+        _league_race(season_id),
     ]
     if window is not None:
         where.append(W3CLadderMatch.start_time >= window[0])
