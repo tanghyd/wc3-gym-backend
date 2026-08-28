@@ -22,9 +22,6 @@ class LadderAchievementBase(SQLModel):
     # The id of a rule in core.achievements; a row naming no rule pays nothing
     rule_id: str = Field(max_length=40)
     points: int
-    # The number the rule compares against, for the two goal rules that read one.
-    # Every other rule carries its threshold in code and leaves this null.
-    target: int | None = None
 
 
 class LadderAchievement(LadderAchievementBase, DBModel, table=True):
@@ -63,8 +60,6 @@ def default_rows(season_id: int | None) -> list["LadderAchievement"]:
     from app.core import achievements
 
     return [
-        LadderAchievement(
-            season_id=season_id, rule_id=rule_id, points=deal.points, target=deal.target
-        )
-        for rule_id, deal in achievements.DEFAULT_PAID.items()
+        LadderAchievement(season_id=season_id, rule_id=rule_id, points=points)
+        for rule_id, points in achievements.DEFAULT_PAID.items()
     ]

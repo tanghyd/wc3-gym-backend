@@ -560,20 +560,21 @@ def test_a_season_drops_a_rule_by_not_paying_it(
     assert "win_first" not in {rule["id"] for rule in body["achievement_rules"]}
 
 
-def test_the_season_goal_is_the_target_it_was_given(
+def test_a_rule_that_pays_per_match_pays_the_season_price(
     client: Client, auth_headers: dict[str, str], league: dict[str, Any]
 ) -> None:
-    """ladder_goal reads a number the season sets, not one baked into the code."""
+    """The variable rules add their count to the season's price, not the code's."""
     season = league["season_id"]
     player = league["player_ids"][0]
-    for index in range(4):
-        add_match(player, f"g{index}", start_time=INSIDE + timedelta(hours=index))
+    for index in range(11):
+        add_match(player, f"r{index}", start_time=INSIDE + timedelta(hours=index))
 
-    repay(season, "ladder_goal", target=12)
+    repay(season, "human", points=40)
 
     row = player_of(ladder_of(client, auth_headers, season), player)
-    assert row["ladder_points"] == 12
-    assert "ladder_goal" in {b["id"] for b in row["achievements"]}
+    badge = next(b for b in row["achievements"] if b["id"] == "human")
+    # 40 from the season, plus one for each of the eleven wins over Human
+    assert badge["points"] == 51
 
 
 # The player route.
