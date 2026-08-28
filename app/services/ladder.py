@@ -133,6 +133,7 @@ class LadderService:
                     User.id.label("user_id"),
                     User.name.label("name"),
                     User.battleTag.label("battleTag"),
+                    User.country.label("country"),
                     User.race.label("race"),
                 ).where(User.id == user_id)
             ).first()
@@ -344,6 +345,7 @@ def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
             User.id.label("user_id"),
             User.name.label("name"),
             User.battleTag.label("battleTag"),
+            User.country.label("country"),
             User.race.label("race"),
             User.ladder_synced_at.label("synced_at"),
             Team.id.label("team_id"),
@@ -725,6 +727,7 @@ def _player[T: LadderPlayer](
         id=user.user_id,
         name=user.name,
         battleTag=user.battleTag,
+        country=user.country,
         race=user.race,
         points=ladder_points + achievements.total_points(earned),
         ladder_points=ladder_points,
