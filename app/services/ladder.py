@@ -348,6 +348,7 @@ def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
             User.ladder_synced_at.label("synced_at"),
             Team.id.label("team_id"),
             Team.name.label("team_name"),
+            Team.long_name.label("team_long_name"),
         )
         .join(DBUserSeasonSignup, DBUserSeasonSignup.user_id == User.id)
         .outerjoin(
@@ -763,7 +764,10 @@ def _teams(
         if row.team_id is None:
             continue
         team = teams.setdefault(
-            row.team_id, LadderTeam(id=row.team_id, name=row.team_name)
+            row.team_id,
+            LadderTeam(
+                id=row.team_id, name=row.team_name, long_name=row.team_long_name
+            ),
         )
         player = _player(
             LadderPlayer,
