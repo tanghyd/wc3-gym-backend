@@ -9,8 +9,10 @@ core.ladder.MIN_DURATION_S, of the players asked for, inside the window
 asked for.
 """
 
+import importlib.util
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -425,6 +427,24 @@ def test_the_season_carries_every_achievement_rule_once(
     assert body["achievement_rules"] == [asdict(rule) for rule in ACHIEVEMENTS]
 
 
+def test_the_season_carries_the_stamp_of_its_last_ladder_sync(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The stamp is the season's own, so an unsynced season reads as unsynced."""
+    assert (
+        ladder_of(client, auth_headers, league["season_id"])["season"]["synced_at"]
+        is None
+    )
+    stamped = datetime(2026, 3, 1, 12, 30)
+    with Session() as session:
+        session.get(Season, league["season_id"]).ladder_synced_at = stamped
+        session.commit()
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["season"]["synced_at"] == stamped.isoformat()
+
+
 def test_every_earned_achievement_is_in_the_catalogue(
     client: Client, auth_headers: dict[str, str], league: dict[str, Any]
 ) -> None:
@@ -491,6 +511,27 @@ def test_the_season_answer_costs_eleven_statements(
 
 
 # The achievement set: one instance per season, per rule.
+
+
+def test_every_rule_a_new_season_pays_is_in_the_catalogue() -> None:
+    """A row naming a rule the code does not know would never pay."""
+    catalogue = {rule.id for rule in ACHIEVEMENTS}
+
+    assert {row.rule_id for row in default_rows(None)} <= catalogue
+
+
+def test_every_rule_the_migration_seeded_is_in_the_catalogue() -> None:
+    """The seed is written out in the migration, so it can drift from the code."""
+    path = next(
+        (Path(__file__).parent.parent / "migrations" / "versions").glob(
+            "a3d92f7c04be_*.py"
+        )
+    )
+    spec = importlib.util.spec_from_file_location("ladder_achievements_seed", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert {rule_id for rule_id, _ in module.SEED} <= {rule.id for rule in ACHIEVEMENTS}
 
 
 def rule_row_id(season_id: int, rule_id: str) -> int:
