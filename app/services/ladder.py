@@ -677,19 +677,15 @@ def _paid(session: OrmSession, season_id: int | None) -> achievements.PaidSet:
         else LadderAchievement.season_id.is_(None)
     )
     rows = session.execute(
-        select(
-            LadderAchievement.rule_id,
-            LadderAchievement.points,
-            LadderAchievement.target,
-        ).where(where)
+        select(LadderAchievement.rule_id, LadderAchievement.points).where(where)
     ).all()
-    return {row.rule_id: achievements.Paid(row.points, row.target) for row in rows}
+    return {row.rule_id: row.points for row in rows}
 
 
 def _rules(paid: achievements.PaidSet) -> list[achievements.Achievement]:
     """The catalogue this scope draws, at the prices this scope pays."""
     return [
-        replace(rule, points=paid[rule.id].points)
+        replace(rule, points=paid[rule.id])
         for rule in achievements.ACHIEVEMENTS
         if rule.id in paid
     ]

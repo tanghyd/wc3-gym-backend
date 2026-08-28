@@ -27,32 +27,32 @@ down_revision: str | None = "c5b8e0a41d67"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# (rule id, points, target). Only the two goal rules read a target.
+# (rule id, points) as the catalogue prices them today.
 SEED = [
-    ("ladder_goal", 500, 500),
-    ("double_up", 1000, 1000),
-    ("i_am_the_captain_now", 100, None),
-    ("addicted", 100, None),
-    ("elite", 100, None),
-    ("dats_fakt_ap", 50, None),
-    ("winner_winner", 50, None),
-    ("sad_trombone", 50, None),
-    ("win_streak_2", 50, None),
-    ("win_first", 15, None),
-    ("lose_first", 25, None),
-    ("win_streak", 25, None),
-    ("win_every_map", 25, None),
-    ("rising_star", 25, None),
-    ("falling_star", 25, None),
-    ("duck_hunting", 10, None),
-    ("night_elf", 10, None),
-    ("undead", 10, None),
-    ("orc", 10, None),
-    ("human", 10, None),
-    ("join_them", 10, None),
-    ("winter", 10, None),
-    ("holiday", 5, None),
-    ("newbie", 5, None),
+    ("ladder_goal", 500),
+    ("double_up", 1000),
+    ("i_am_the_captain_now", 100),
+    ("addicted", 100),
+    ("elite", 100),
+    ("dats_fakt_ap", 50),
+    ("winner_winner", 50),
+    ("sad_trombone", 50),
+    ("win_streak_2", 50),
+    ("win_first", 15),
+    ("lose_first", 25),
+    ("win_streak", 25),
+    ("win_every_map", 25),
+    ("rising_star", 25),
+    ("falling_star", 25),
+    ("duck_hunting", 10),
+    ("night_elf", 10),
+    ("undead", 10),
+    ("orc", 10),
+    ("human", 10),
+    ("join_them", 10),
+    ("winter", 10),
+    ("holiday", 5),
+    ("newbie", 5),
 ]
 
 
@@ -65,7 +65,6 @@ def upgrade() -> None:
             "rule_id", sqlmodel.sql.sqltypes.AutoString(length=40), nullable=False
         ),
         sa.Column("points", sa.Integer(), nullable=False),
-        sa.Column("target", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["season_id"], ["seasons.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -90,14 +89,9 @@ def upgrade() -> None:
         op.bulk_insert(
             table,
             [
-                {
-                    "season_id": season_id,
-                    "rule_id": rule_id,
-                    "points": points,
-                    "target": target,
-                }
+                {"season_id": season_id, "rule_id": rule_id, "points": points}
                 for season_id in seasons
-                for rule_id, points, target in SEED
+                for rule_id, points in SEED
             ],
         )
 

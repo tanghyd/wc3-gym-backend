@@ -65,20 +65,9 @@ class Achievement:
     icon: str
 
 
-@dataclass(frozen=True)
-class Paid:
-    """What one season pays for one rule.
-
-    `target` is the number the rule compares against, and only the two goal
-    rules read one; every other rule carries its threshold in code.
-    """
-
-    points: int
-    target: int | None = None
-
-
-# Which rules a scope pays, and how much, keyed by rule id
-PaidSet = Mapping[str, Paid]
+# What a scope pays for each rule it pays at all, keyed by rule id. A rule
+# missing from the map is a rule this scope does not run.
+PaidSet = Mapping[str, int]
 
 
 class RaceValue(Protocol):
@@ -334,13 +323,13 @@ def earned(
 
     def pay(rule: Achievement, extra: int = 0, suffix: str = "") -> None:
         """Award a rule at what this scope pays for it, if it pays it at all."""
-        deal = paid.get(rule.id)
-        if deal is None:
+        price = paid.get(rule.id)
+        if price is None:
             return
         found.append(
             replace(
                 rule,
-                points=deal.points + extra,
+                points=price + extra,
                 description=rule.description + suffix,
             )
         )
@@ -381,14 +370,9 @@ def earned(
         pay(RISING_STAR)
     if min(daily_mmr) < -100:
         pay(FALLING_STAR)
-    # The only two rules whose threshold is data: the season sets its goal
-    if (goal := paid.get(LADDER_GOAL_REACHED.id)) and points >= (
-        goal.target if goal.target is not None else LADDER_GOAL
-    ):
+    if points >= LADDER_GOAL:
         pay(LADDER_GOAL_REACHED)
-    if (double := paid.get(DOUBLE_UP.id)) and points >= (
-        double.target if double.target is not None else LADDER_GOAL * 2
-    ):
+    if points >= LADDER_GOAL * 2:
         pay(DOUBLE_UP)
 
     found.sort(key=lambda item: -item.points)
@@ -412,7 +396,4 @@ def _longest(rows: Sequence[AchievementRow]) -> int:
 
 # What a season pays when nobody has changed it: the wc3.no set, at its own
 # prices. The migration seeds every season with exactly this.
-DEFAULT_TARGETS = {LADDER_GOAL_REACHED.id: LADDER_GOAL, DOUBLE_UP.id: LADDER_GOAL * 2}
-DEFAULT_PAID: PaidSet = {
-    rule.id: Paid(rule.points, DEFAULT_TARGETS.get(rule.id)) for rule in ACHIEVEMENTS
-}
+DEFAULT_PAID: PaidSet = {rule.id: rule.points for rule in ACHIEVEMENTS}
