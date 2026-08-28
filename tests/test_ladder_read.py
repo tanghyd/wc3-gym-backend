@@ -1,0 +1,454 @@
+"""The ladder read path: one rule, two faces, and answers aggregated in SQL.
+
+Every number in a ladder answer is a group the database computed over
+w3c_ladder_matches. Nothing is stored, so the tests write matches and read
+the routes.
+
+The scope of every answer is the same: matches longer than
+core.ladder.MIN_DURATION_S, of the players asked for, inside the window
+asked for.
+"""
+
+from datetime import datetime, timedelta
+from typing import Any
+
+import pytest
+from fastapi import FastAPI
+from httpx2 import Client
+from sqlalchemy import case, func, select
+
+from app.core import ladder
+from app.core.db import Session
+from app.models.enums import Race
+from app.models.relationships import DBUserSeasonSignup
+from app.models.user import User
+from app.models.w3c_ladder_match import W3CLadderMatch
+from tests.test_query_budget import count_statements
+
+# The seeded season runs 2026-01-05 to 2026-02-27.
+INSIDE = datetime(2026, 1, 7, 14, 30)
+
+
+def sign_up(season_id: int, user_ids: list[int]) -> None:
+    with Session() as session:
+        for user_id in user_ids:
+            session.add(DBUserSeasonSignup(user_id=user_id, season_id=season_id))
+        session.commit()
+
+
+def add_match(
+    user_id: int,
+    match_id: str,
+    start_time: datetime = INSIDE,
+    duration_s: int = 600,
+    won: bool = True,
+    opp_race: Race = Race.HU,
+    mmr_before: int = 1500,
+    mmr_after: int = 1512,
+    opp_battletag: str = "Someone#1234",
+    race: Race | None = None,
+) -> None:
+    """One stored match. Without a race it is played on the league race."""
+    with Session() as session:
+        session.add(
+            W3CLadderMatch(
+                w3c_match_id=match_id,
+                user_id=user_id,
+                wc3_season=25,
+                start_time=start_time,
+                duration_s=duration_s,
+                map_name="Last Refuge",
+                race=race or session.get(User, user_id).race,
+                opp_battletag=opp_battletag,
+                opp_race=opp_race,
+                won=won,
+                mmr_before=mmr_before,
+                mmr_after=mmr_after,
+            )
+        )
+        session.commit()
+
+
+@pytest.fixture
+def league(seeded: dict[str, Any]) -> dict[str, Any]:
+    """The seeded league with its four players signed up for the season."""
+    sign_up(seeded["season_id"], seeded["player_ids"])
+    return seeded
+
+
+def ladder_of(
+    client: Client, headers: dict[str, str], season_id: int
+) -> dict[str, Any]:
+    resp = client.get(f"/seasons/{season_id}/ladder", headers=headers)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def player_of(body: dict[str, Any], user_id: int) -> dict[str, Any]:
+    return next(
+        player
+        for team in body["teams"]
+        for player in team["players"]
+        if player["id"] == user_id
+    )
+
+
+# The rule.
+
+
+def test_the_two_faces_of_the_rule_agree(app: FastAPI, league: dict[str, Any]) -> None:
+    """Over every duration around the boundary, SQL pays what Python pays."""
+    player = league["player_ids"][0]
+    durations = [0, 1, 60, 119, 120, 121, 122, 600, 3600]
+    for index, duration in enumerate(durations):
+        for won in (True, False):
+            add_match(
+                player,
+                f"m{index}{int(won)}",
+                duration_s=duration,
+                won=won,
+                start_time=INSIDE + timedelta(minutes=index),
+            )
+
+    with Session() as session:
+        rows = list(session.scalars(select(W3CLadderMatch)))
+        in_sql = session.execute(
+            select(
+                W3CLadderMatch.id,
+                ladder.points_case(W3CLadderMatch.won, W3CLadderMatch.duration_s),
+                case((ladder.counted_clause(W3CLadderMatch.duration_s), 1), else_=0),
+            )
+        ).all()
+        totals = session.execute(
+            select(
+                func.sum(
+                    ladder.points_case(W3CLadderMatch.won, W3CLadderMatch.duration_s)
+                ),
+                func.sum(
+                    case((ladder.counted_clause(W3CLadderMatch.duration_s), 1), else_=0)
+                ),
+            )
+        ).one()
+
+    by_id = {row.id: row for row in rows}
+    for row_id, points, counted in in_sql:
+        row = by_id[row_id]
+        assert points == ladder.points(row.won, row.duration_s), row.duration_s
+        assert bool(counted) is ladder.counted(row.duration_s), row.duration_s
+
+    in_python = ladder.totals(rows)
+    assert totals == (in_python.points, in_python.games)
+    # The boundary itself: 120 s pays nothing, 121 s pays
+    assert ladder.points(True, 120) == 0
+    assert ladder.points(False, 120) == 0
+    assert ladder.points(True, 121) == ladder.WIN_POINTS
+    assert ladder.points(False, 121) == ladder.LOSS_POINTS
+
+
+def test_a_short_match_is_no_game(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """A 120 s match is not counted; a 121 s one is."""
+    player = league["player_ids"][0]
+    add_match(player, "short", duration_s=120)
+    add_match(player, "long", duration_s=121, start_time=INSIDE + timedelta(hours=1))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 1
+    row = player_of(body, player)
+    assert (row["games"], row["wins"], row["points"]) == (1, 1, 3)
+
+
+# The season window.
+
+
+def test_the_window_takes_the_season_and_nothing_around_it(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """One second before the start and one second after the end are out."""
+    player = league["player_ids"][0]
+    add_match(player, "before", start_time=datetime(2026, 1, 4, 23, 59, 59))
+    add_match(player, "first", start_time=datetime(2026, 1, 5, 0, 0, 0))
+    add_match(player, "last", start_time=datetime(2026, 2, 27, 23, 59, 59))
+    add_match(player, "after", start_time=datetime(2026, 2, 28, 0, 0, 0))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 2
+    assert player_of(body, player)["games"] == 2
+    assert body["season"]["start_date"] == "2026-01-05"
+    assert body["season"]["end_date"] == "2026-02-27"
+
+
+def test_a_player_with_no_matches_reads_zeros(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """Signed up and never played is a row of zeros, not a missing row."""
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert [player["id"] for team in body["teams"] for player in team["players"]] != []
+    row = player_of(body, league["player_ids"][0])
+    assert (row["points"], row["wins"], row["losses"], row["games"]) == (0, 0, 0, 0)
+    assert row["per_day"] == []
+    assert row["mmr"] == {"start": None, "min": None, "max": None, "current": None}
+    assert row["vs_race"] == {race.value: [0, 0] for race in Race}
+    assert row["achievements"] == []
+
+
+def test_a_match_between_two_gnl_players_counts_once_in_the_season(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """Both players own their own row; the season total counts the match once."""
+    one, two = league["player_ids"][0], league["player_ids"][2]
+    add_match(one, "shared", won=True)
+    add_match(two, "shared", won=False)
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 1
+    assert player_of(body, one)["games"] == 1
+    assert player_of(body, two)["games"] == 1
+    assert sum(team["games"] for team in body["teams"]) == 2
+
+
+def test_the_teams_carry_the_points_of_their_players(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    one, two = league["player_ids"][0], league["player_ids"][1]
+    add_match(one, "a", won=True)
+    add_match(two, "b", won=False)
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    team = next(t for t in body["teams"] if t["name"] == "Alpha")
+    assert (team["points"], team["games"]) == (4, 2)
+    assert [player["id"] for player in team["players"]] == [one, two]
+
+
+# The shapes the page draws.
+
+
+def test_per_day_holds_one_row_a_day_and_the_last_mmr_of_it(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    player = league["player_ids"][0]
+    add_match(player, "d1a", start_time=INSIDE, mmr_before=1500, mmr_after=1512)
+    add_match(
+        player,
+        "d1b",
+        start_time=INSIDE + timedelta(hours=2),
+        won=False,
+        mmr_before=1512,
+        mmr_after=1499,
+    )
+    add_match(
+        player,
+        "d2",
+        start_time=INSIDE + timedelta(days=1),
+        mmr_before=1499,
+        mmr_after=1520,
+    )
+
+    row = player_of(ladder_of(client, auth_headers, league["season_id"]), player)
+
+    assert row["per_day"] == [
+        {"d": "2026-01-07", "w": 1, "l": 1, "mmr": 1499},
+        {"d": "2026-01-08", "w": 1, "l": 0, "mmr": 1520},
+    ]
+    assert row["mmr"] == {"start": 1500, "min": 1499, "max": 1520, "current": 1520}
+
+
+def test_vs_race_holds_every_race(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    player = league["player_ids"][0]
+    add_match(player, "vs1", opp_race=Race.UD, won=True)
+    add_match(
+        player,
+        "vs2",
+        opp_race=Race.UD,
+        won=False,
+        start_time=INSIDE + timedelta(hours=1),
+    )
+    add_match(
+        player,
+        "vs3",
+        opp_race=Race.OC,
+        won=True,
+        start_time=INSIDE + timedelta(hours=2),
+    )
+
+    row = player_of(ladder_of(client, auth_headers, league["season_id"]), player)
+
+    assert row["vs_race"] == {
+        "RANDOM": [0, 0],
+        "HU": [0, 0],
+        "OC": [1, 0],
+        "NE": [0, 0],
+        "UD": [1, 1],
+    }
+
+
+def test_by_hour_buckets_the_matches_by_utc_weekday_and_hour(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """7 by 24, row 0 Sunday, and a match between two GNL players counts once."""
+    one, two = league["player_ids"][0], league["player_ids"][2]
+    # 2026-01-07 is a Wednesday, so row 3
+    add_match(one, "shared", start_time=datetime(2026, 1, 7, 14, 30))
+    add_match(two, "shared", start_time=datetime(2026, 1, 7, 14, 30), won=False)
+    add_match(one, "sunday", start_time=datetime(2026, 1, 11, 0, 5))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert len(body["by_hour"]) == 7
+    assert {len(row) for row in body["by_hour"]} == {24}
+    assert body["by_hour"][3][14] == 1
+    assert body["by_hour"][0][0] == 1
+    assert sum(sum(row) for row in body["by_hour"]) == 2
+
+
+def test_the_season_answer_costs_seven_statements(
+    app: FastAPI, league: dict[str, Any]
+) -> None:
+    """The count is a constant: it does not grow with the number of players."""
+    from app.services.ladder import LadderService
+
+    for index, player in enumerate(league["player_ids"]):
+        add_match(player, f"q{index}", start_time=INSIDE + timedelta(hours=index))
+
+    with count_statements() as tally:
+        body = LadderService().season_ladder(league["season_id"])
+
+    assert body.total_games == 4
+    assert tally[0] == 7
+
+
+# The player route.
+
+
+def test_the_user_ladder_answers_the_window_of_the_season(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    player = league["player_ids"][0]
+    add_match(player, "inside", start_time=INSIDE)
+    add_match(player, "outside", start_time=datetime(2025, 12, 1, 12, 0))
+
+    resp = client.get(
+        f"/users/{player}/ladder?season_id={league['season_id']}", headers=auth_headers
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["games"] == 1
+    assert [match["w3c_match_id"] for match in body["matches"]] == ["inside"]
+    assert body["name"] == "P1"
+    assert body["battleTag"] == "P1#1111"
+
+
+def test_the_user_ladder_without_a_season_reads_every_match(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The all-time answer ignores the season window."""
+    player = league["player_ids"][0]
+    add_match(player, "inside", start_time=INSIDE)
+    add_match(player, "outside", start_time=datetime(2025, 12, 1, 12, 0))
+
+    body = client.get(f"/users/{player}/ladder", headers=auth_headers).json()
+
+    assert body["games"] == 2
+    assert [match["w3c_match_id"] for match in body["matches"]] == ["inside", "outside"]
+
+
+def test_a_match_row_names_the_gnl_user_of_the_opponent(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The client opens that player from the row; an outsider reads null."""
+    one, two = league["player_ids"][0], league["player_ids"][2]
+    add_match(one, "gnl", opp_battletag="p3#3333", opp_race=Race.NE)
+    add_match(
+        one,
+        "outsider",
+        opp_battletag="Nobody#9999",
+        start_time=INSIDE + timedelta(hours=1),
+    )
+
+    body = client.get(f"/users/{one}/ladder", headers=auth_headers).json()
+
+    rows = {match["w3c_match_id"]: match for match in body["matches"]}
+    assert rows["gnl"]["opp_user_id"] == two
+    assert rows["outsider"]["opp_user_id"] is None
+    assert rows["gnl"]["map_name"] == "Last Refuge"
+    assert rows["gnl"]["race"] == "HU"
+    assert rows["gnl"]["opp_race"] == "NE"
+    assert rows["gnl"]["duration_s"] == 600
+    assert (rows["gnl"]["mmr_before"], rows["gnl"]["mmr_after"]) == (1500, 1512)
+
+
+def test_the_match_list_pages_like_every_other_list(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """limit and offset, 1 to 500, and a page holds no row of another page."""
+    player = league["player_ids"][0]
+    for index in range(5):
+        add_match(player, f"p{index}", start_time=INSIDE + timedelta(hours=index))
+
+    url = f"/users/{player}/ladder"
+    for query in ("limit=0", "limit=501", "offset=-1"):
+        assert client.get(f"{url}?{query}", headers=auth_headers).status_code == 422
+
+    first = client.get(f"{url}?limit=2", headers=auth_headers).json()
+    second = client.get(f"{url}?limit=2&offset=2", headers=auth_headers).json()
+
+    assert [match["w3c_match_id"] for match in first["matches"]] == ["p4", "p3"]
+    assert [match["w3c_match_id"] for match in second["matches"]] == ["p2", "p1"]
+    assert first["games"] == 5
+
+
+# Auth and unknown ids.
+
+
+def test_both_routes_need_a_token(client: Client, league: dict[str, Any]) -> None:
+    assert client.get(f"/seasons/{league['season_id']}/ladder").status_code == 401
+    assert client.get(f"/users/{league['player_ids'][0]}/ladder").status_code == 401
+
+
+def test_both_routes_answer_404_for_an_unknown_id(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    season = client.get("/seasons/9999/ladder", headers=auth_headers)
+    user = client.get("/users/9999/ladder", headers=auth_headers)
+    window = client.get(
+        f"/users/{league['player_ids'][0]}/ladder?season_id=9999", headers=auth_headers
+    )
+
+    assert season.status_code == 404
+    assert season.json() == {"error": "Season not found"}
+    assert user.status_code == 404
+    assert user.json() == {"error": "User not found"}
+    assert window.status_code == 404
+
+
+def test_the_public_user_shape_carries_the_ladder_stamp(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """Every public user answer says when his ladder matches were last read."""
+    body = client.get(f"/users/{league['player_ids'][0]}").json()
+
+    assert body["ladder_synced_at"] is None
+    assert "w3c_synced_at" in body
+
+
+def test_a_match_on_another_race_is_practice(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The league locks a player to one race, so another race pays nothing."""
+    player = league["player_ids"][0]
+    add_match(player, "league", race=Race.HU)
+    add_match(player, "practice", race=Race.UD, start_time=INSIDE + timedelta(hours=1))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 1
+    assert player_of(body, player)["games"] == 1
