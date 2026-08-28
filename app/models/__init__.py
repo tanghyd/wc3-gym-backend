@@ -41,6 +41,7 @@ from app.models import (
     types,
     user,
     user_team_season,
+    w3c_ladder_match,
     w3c_stats,
 )
 
@@ -68,5 +69,6 @@ __all__ = [
     "types",
     "user",
     "user_team_season",
+    "w3c_ladder_match",
     "w3c_stats",
 ]
