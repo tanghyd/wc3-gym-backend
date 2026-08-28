@@ -85,6 +85,8 @@ class LadderPlayer(SQLModel):
     id: int
     name: str | None = None
     battleTag: str | None = None
+    # The two-letter code the flag beside his name is drawn from
+    country: str | None = None
     race: Annotated[str | None, EnumValue] = None
     # Ladder points plus achievement points, the total wc3.no publishes
     points: int = 0
