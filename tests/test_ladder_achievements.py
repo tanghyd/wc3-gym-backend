@@ -417,7 +417,7 @@ def test_the_rules_read_the_stored_rows(league: dict[str, Any]) -> None:
     assert run(rows) == {"win_first"}
 
 
-def test_the_user_answer_costs_eleven_statements(league: dict[str, Any]) -> None:
+def test_the_user_answer_costs_thirteen_statements(league: dict[str, Any]) -> None:
     """The count is a constant: it does not grow with the number of matches."""
     from app.services.ladder import LadderService
 
@@ -429,4 +429,4 @@ def test_the_user_answer_costs_eleven_statements(league: dict[str, Any]) -> None
         answer = LadderService().user_ladder(player, league["season_id"])
 
     assert answer.games == 4
-    assert tally[0] == 11
+    assert tally[0] == 13

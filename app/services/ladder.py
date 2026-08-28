@@ -8,7 +8,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -33,6 +33,7 @@ from app.core.db import Session
 from app.core.exceptions import NotFoundError, W3CThrottledError
 from app.models.enums import Race
 from app.models.ladder_achievement import LadderAchievement
+from app.models.ladder_sync import LadderSync
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.team import Team
@@ -68,6 +69,20 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+@dataclass(frozen=True)
+class _Plan:
+    """What one sync run asks w3champions for.
+
+    `seasons` names the w3champions seasons to read; without one the walk
+    starts at `walk_from` and discovers them.
+    """
+
+    since: datetime
+    open_season: int
+    seasons: tuple[int, ...] | None
+    walk_from: int
+
+
 class LadderService:
     """Ladder matches are written by the sync alone, so this service has no
     CRUD. The reads aggregate them in SQL and store nothing."""
@@ -78,11 +93,12 @@ class LadderService:
     def season_ladder(self, season_id: int) -> SeasonLadder:
         """The ladder of one season: its teams, its players and its hours.
 
-        Eleven statements, whatever the number of players: the season, the
-        signups with their team, the achievement set this season pays, one
-        group each for the totals, the MMR spans, the player days, the races,
-        the hours and the season days, then the matches the achievements read
-        and the season's coaches.
+        Thirteen statements, whatever the number of players: the season, the
+        signups with their team, the achievement set this season pays, the
+        w3champions seasons the window sits in, the sync stamps of the roster,
+        one group each for the totals, the MMR spans, the player days, the
+        races, the hours and the season days, then the matches the
+        achievements read and the season's coaches.
         """
         with Session.begin() as session:
             season = session.get(Season, season_id)
@@ -93,6 +109,7 @@ class LadderService:
 
             user_ids = [row.user_id for row in roster]
             window = _window(season)
+            stamps = _stamps(session, user_ids, _w3c_seasons_for(session, season))
             scope = _scope(user_ids, window, season_id)
             totals = _totals(session, scope)
             spans = _mmr_span(session, _mmr_scope(user_ids, window, season_id))
@@ -107,14 +124,14 @@ class LadderService:
                     id=season.id,
                     start_date=season.start_date,
                     end_date=season.end_date,
-                    synced_at=season.ladder_synced_at,
+                    synced_at=_season_stamp(stamps, user_ids),
                 ),
                 # A match starts on one day, so the days add up to the total
                 total_games=sum(games.values()),
                 by_hour=by_hour,
                 per_day=_season_days(season, games),
                 achievement_rules=_rules(paid),
-                teams=_teams(roster, totals, spans, days, races, earned),
+                teams=_teams(roster, totals, spans, days, races, earned, stamps),
             )
 
     def user_ladder(
@@ -127,9 +144,9 @@ class LadderService:
         """One player's record, and one page of the matches behind it.
 
         A season names the window; without one the answer is his whole
-        history. Eight statements, eleven with a season, which adds the
-        season, its roster and its coaches for the achievements that read a
-        team.
+        history. Nine statements, thirteen with a season, which adds the
+        season, the w3champions seasons its window sits in, its roster and its
+        coaches for the achievements that read a team.
         """
         with Session.begin() as session:
             user = session.execute(
@@ -145,12 +162,15 @@ class LadderService:
                 raise NotFoundError("User not found")
 
             window = None
+            wc3_seasons = None
             if season_id is not None:
                 season = session.get(Season, season_id)
                 if season is None:
                     raise NotFoundError("Season not found")
                 window = _window(season)
+                wc3_seasons = _w3c_seasons_for(session, season)
 
+            stamps = _stamps(session, [user_id], wc3_seasons)
             scope = _scope([user_id], window, season_id)
             totals = _totals(session, scope)
             spans = _mmr_span(session, _mmr_scope([user_id], window, season_id))
@@ -165,6 +185,7 @@ class LadderService:
                 _per_day(session, scope).get(user_id, []),
                 _vs_race(session, scope).get(user_id, {}),
                 earned.get(user_id, []),
+                stamps.get(user_id),
             )
             answer.matches = _matches(session, scope, limit, offset)
             return answer
@@ -183,9 +204,11 @@ class LadderService:
                 raise NotFoundError("Season not found")
             # A season without dates reads every match the walk reaches
             since, end = _window(season)
-            # A window still open ends in the pinned season; a closed one is
-            # dated by the matches already stored
-            walk_from = None if end >= _now() else _walk_start(session, end)
+            open_window = end >= _now()
+            seasons = _w3c_seasons_for(session, season)
+            # The bootstrap start: a closed window is dated by the matches
+            # already stored, an open one ends in the pinned season
+            walk_from = None if open_window else _walk_start(session, end)
             total = session.scalar(
                 select(func.count())
                 .select_from(DBUserSeasonSignup)
@@ -200,39 +223,52 @@ class LadderService:
                 .limit(limit)
             ).all()
 
+        if seasons and open_window:
+            # w3champions can have opened a season no stored match names yet
+            open_season = W3CService(
+                settings_app_service=self.settings_app_service
+            ).current_season()
+            seasons = sorted({*seasons, open_season}, reverse=True)
+
         users = [
             UserReduced(id=row.id, name=row.name, battleTag=row.battleTag)
             for row in rows
         ]
-        result = self.sync_users(users, since, walk_from)
+        result = self.sync_users(users, since, seasons, walk_from)
         done = offset + len(users)
         next_offset = done if done < (total or 0) else None
-        if next_offset is None:
-            # The season is synced once the last chunk has run, not before
-            with Session.begin() as session:
-                session.execute(
-                    update(Season)
-                    .where(Season.id == season_id)
-                    .values(ladder_synced_at=_now())
-                )
         return LadderSyncResult(
             **result.model_dump(), total=total or 0, next_offset=next_offset
         )
 
     def sync_users(
-        self, users: list[UserReduced], since: datetime, season: int | None = None
+        self,
+        users: list[UserReduced],
+        since: datetime,
+        seasons: Sequence[int] | None = None,
+        walk_from: int | None = None,
     ) -> W3CSyncResult:
         """Store the matches these players started at or after `since`.
 
-        The walk starts at `season`, or at the pinned season without one.
+        `seasons` names the w3champions seasons of a GNL window: an empty one
+        is a window with no stored match, which the walk discovers from
+        `walk_from`. Naming none at all refreshes the open season alone, which
+        is what a player's own sync means.
         """
         result = W3CSyncResult()
         if not users:
             return result
 
         w3c_service = W3CService(settings_app_service=self.settings_app_service)
-        if season is None:
-            season = w3c_service.current_season()
+        open_season = w3c_service.current_season()
+        # An empty list is a window no stored match names a season for
+        named = (open_season,) if seasons is None else tuple(seasons) or None
+        plan = _Plan(
+            since=since,
+            open_season=open_season,
+            seasons=named,
+            walk_from=walk_from or open_season,
+        )
         owners = self._user_ids_by_battle_tag()
         synced: set[int] = set()
         failures: dict[int, str] = {}
@@ -241,7 +277,7 @@ class LadderService:
         # Each worker opens its own session; the threads share the engine only
         with ThreadPoolExecutor(W3C_SYNC_WORKERS) as pool:
             futures = {
-                pool.submit(self._sync_user, u, w3c_service, season, since, owners): u
+                pool.submit(self._sync_user, u, w3c_service, plan, owners): u
                 for u in users
             }
             for future in as_completed(futures):
@@ -295,12 +331,36 @@ class LadderService:
         self,
         user: UserReduced,
         w3c_service: W3CService,
-        season: int,
-        since: datetime,
+        plan: _Plan,
         owners: dict[str, int],
     ) -> None:
-        """Fetch one player's matches and write every row a GNL player owns."""
-        matches = w3c_service.get_player_matches(user.battleTag, season, since)
+        """Fetch what this player still owes the plan and write every row a
+        GNL player owns."""
+        with Session.begin() as session:
+            ledger = {
+                row.wc3_season: row
+                for row in session.execute(
+                    select(
+                        LadderSync.wc3_season,
+                        LadderSync.synced_at,
+                        LadderSync.complete,
+                    ).where(LadderSync.user_id == user.id)
+                )
+            }
+
+        if plan.seasons is None:
+            matches, complete = w3c_service.walk_player_matches(
+                user.battleTag, plan.walk_from, plan.since
+            )
+        else:
+            wanted = []
+            for season in plan.seasons:
+                row = ledger.get(season)
+                is_open = season == plan.open_season
+                if not _read_to_the_end(row, is_open):
+                    wanted.append((season, _since_of(row, is_open, plan.since)))
+            matches, complete = w3c_service.get_player_matches(user.battleTag, wanted)
+
         by_user: dict[int, list[W3CLadderMatchCreate]] = defaultdict(list)
         for row in matches:
             # The opponent's row is written from the same payload; the unique
@@ -309,13 +369,46 @@ class LadderService:
             if owner is not None:
                 by_user[owner].append(row)
 
+        stamp = _now()
         with Session.begin() as session:
             for user_id, rows in by_user.items():
                 self._write_matches(session, user_id, rows)
+            # The ledger names the seasons this run read; a skipped one keeps
+            # the stamp of the run that read it
+            for season, done in complete.items():
+                self._stamp(session, user.id, season, stamp, done)
             # The stamp says when the app last asked, not that matches were found
             session.execute(
-                update(User).where(User.id == user.id).values(ladder_synced_at=_now())
+                update(User).where(User.id == user.id).values(ladder_synced_at=stamp)
             )
+
+    def _stamp(
+        self,
+        session: OrmSession,
+        user_id: int,
+        season: int,
+        stamp: datetime,
+        complete: bool,
+    ) -> None:
+        """Record that this player's w3champions season was read just now."""
+        row = session.scalar(
+            select(LadderSync).where(
+                LadderSync.user_id == user_id, LadderSync.wc3_season == season
+            )
+        )
+        if row is None:
+            LadderSync.add(
+                session,
+                {
+                    "user_id": user_id,
+                    "wc3_season": season,
+                    "synced_at": stamp,
+                    "complete": complete,
+                },
+            )
+            return
+        row.synced_at = stamp
+        row.complete = complete
 
     def _write_matches(
         self, session: OrmSession, user_id: int, rows: list[W3CLadderMatchCreate]
@@ -357,6 +450,70 @@ def _window(season: Season) -> tuple[datetime, datetime]:
         datetime.combine(season.start_date or date.min, time.min),
         datetime.combine(season.end_date or date.max, time.max),
     )
+
+
+def _read_to_the_end(row: Row | None, open_season: bool) -> bool:
+    """A closed w3champions season read to its end is never read again.
+
+    The open season always is: it takes new matches after every run.
+    """
+    return row is not None and row.complete and not open_season
+
+
+def _since_of(row: Row | None, open_season: bool, start: datetime) -> datetime:
+    """The open season is read again from its own stamp; every other season is
+    read from the start of the window."""
+    return row.synced_at if row is not None and open_season else start
+
+
+def _w3c_seasons_for(session: OrmSession, season: Season) -> list[int]:
+    """The w3champions seasons this GNL window sits in, newest first.
+
+    A window is dated by the matches already stored in it, so a window with
+    none names no season and the walk discovers them instead.
+    """
+    start, end = _window(season)
+    return list(
+        session.scalars(
+            select(W3CLadderMatch.wc3_season)
+            .where(W3CLadderMatch.start_time >= start, W3CLadderMatch.start_time <= end)
+            .group_by(W3CLadderMatch.wc3_season)
+            .order_by(W3CLadderMatch.wc3_season.desc())
+        )
+    )
+
+
+def _stamps(
+    session: OrmSession, user_ids: Sequence[int], seasons: Sequence[int] | None
+) -> dict[int, datetime | None]:
+    """Per player, how fresh his ladder is: the oldest stamp over the
+    w3champions seasons the window needs, and None while one of them is unread.
+
+    The all-time answer names no seasons, so it reads every season he has.
+    """
+    where = [LadderSync.user_id.in_(user_ids)]
+    if seasons is not None:
+        where.append(LadderSync.wc3_season.in_(seasons))
+    rows = session.execute(
+        select(
+            LadderSync.user_id.label("user_id"),
+            func.min(LadderSync.synced_at).label("oldest"),
+            func.count().label("read"),
+        )
+        .where(*where)
+        .group_by(LadderSync.user_id)
+    ).all()
+    needed = len(seasons) if seasons is not None else 1
+    return {row.user_id: (row.oldest if row.read >= needed else None) for row in rows}
+
+
+def _season_stamp(
+    stamps: dict[int, datetime | None], user_ids: Sequence[int]
+) -> datetime | None:
+    """The season is as fresh as its least fresh player, and unsynced while one
+    rostered player has a season of the window unread."""
+    read = [stamps.get(user_id) for user_id in user_ids]
+    return min(read) if read and all(stamp is not None for stamp in read) else None
 
 
 def _walk_start(session: OrmSession, end: datetime) -> int | None:
@@ -781,6 +938,7 @@ def _player[T: LadderPlayer](
     days: list[Row],
     races: dict[str, list[int]],
     earned: Sequence[achievements.Achievement] = (),
+    synced_at: datetime | None = None,
 ) -> T:
     """One player row of an answer. A player with no match reads zeros."""
     ladder_points = int(total.points or 0) if total is not None else 0
@@ -807,6 +965,7 @@ def _player[T: LadderPlayer](
             for day in days
         ],
         vs_race=races or _empty_races(),
+        synced_at=synced_at,
     )
 
 
@@ -817,6 +976,7 @@ def _teams(
     days: dict[int, list[Row]],
     races: dict[int, dict[str, list[int]]],
     earned: dict[int, list[achievements.Achievement]],
+    stamps: dict[int, datetime | None],
 ) -> list[LadderTeam]:
     """The teams of the season, each with the players signed up on it.
 
@@ -841,6 +1001,7 @@ def _teams(
             days.get(row.user_id, []),
             races.get(row.user_id, {}),
             earned.get(row.user_id, []),
+            stamps.get(row.user_id),
         )
         team.players.append(player)
         team.points += player.points

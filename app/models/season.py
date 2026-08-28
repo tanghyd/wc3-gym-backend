@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from sqlalchemy import Index, text
@@ -36,8 +36,6 @@ class Season(SeasonBase, DBModel, table=True):
     __table_args__ = (Index("uq_seasons_name", text("lower(trim(name))"), unique=True),)
 
     id: int | None = Field(default=None, primary_key=True)
-    # When the last chunk of a ladder sync of this season finished
-    ladder_synced_at: datetime | None = None
     user_teams: list["DBUserTeamSeason"] = Relationship(
         back_populates="season", sa_relationship_kwargs={"cascade": "all, delete"}
     )
