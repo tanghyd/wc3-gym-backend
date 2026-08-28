@@ -8,7 +8,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -43,6 +43,7 @@ from app.models.w3c_ladder_match import (
     LadderMmr,
     LadderPlayer,
     LadderSeason,
+    LadderSeasonDay,
     LadderSyncResult,
     LadderTeam,
     SeasonLadder,
@@ -76,8 +77,8 @@ class LadderService:
         """The ladder of one season: its teams, its players and its hours.
 
         Nine statements, whatever the number of players: the season, the
-        signups with their team, one group each for the totals, the days, the
-        races, the hours and the distinct match count, then the matches the
+        signups with their team, one group each for the totals, the player
+        days, the races, the hours and the season days, then the matches the
         achievements read and the season's coaches.
         """
         with Session.begin() as session:
@@ -92,9 +93,7 @@ class LadderService:
             days = _per_day(session, scope)
             races = _vs_race(session, scope)
             by_hour = _by_hour(session, scope)
-            total_games = session.scalar(
-                select(func.count(distinct(W3CLadderMatch.w3c_match_id))).where(*scope)
-            )
+            games = _games_per_day(session, scope)
             earned = _earned(session, scope, roster, totals, season_id)
             stamps = [row.synced_at for row in roster if row.synced_at]
             return SeasonLadder(
@@ -104,8 +103,11 @@ class LadderService:
                     end_date=season.end_date,
                     synced_at=max(stamps) if stamps else None,
                 ),
-                total_games=int(total_games or 0),
+                # A match starts on one day, so the days add up to the total
+                total_games=sum(games.values()),
                 by_hour=by_hour,
+                per_day=_season_days(season, games),
+                achievement_rules=achievements.ACHIEVEMENTS,
                 teams=_teams(roster, totals, days, races, earned),
             )
 
@@ -515,6 +517,37 @@ def _by_hour(session: OrmSession, scope: list[ColumnElement[bool]]) -> list[list
     for row in rows:
         matrix[int(row.weekday)][int(row.hour)] = int(row.games)
     return matrix
+
+
+def _games_per_day(
+    session: OrmSession, scope: list[ColumnElement[bool]]
+) -> dict[date, int]:
+    """Distinct matches per UTC day, so a match between two GNL players
+    counts once, the way the season total counts it."""
+    day = func.date(W3CLadderMatch.start_time)
+    rows = session.execute(
+        select(
+            day.label("day"),
+            func.count(distinct(W3CLadderMatch.w3c_match_id)).label("games"),
+        )
+        .where(*scope)
+        .group_by(day)
+    ).all()
+    return {_as_date(row.day): int(row.games or 0) for row in rows}
+
+
+def _season_days(season: Season, games: dict[date, int]) -> list[LadderSeasonDay]:
+    """Every day of the season window, 0 on the days nobody played.
+
+    A season missing a date has no window to draw, so it answers the days it
+    has matches on.
+    """
+    start = season.start_date or (min(games) if games else None)
+    end = season.end_date or (max(games) if games else None)
+    if start is None or end is None:
+        return []
+    days = [start + timedelta(days=n) for n in range((end - start).days + 1)]
+    return [LadderSeasonDay(d=day, g=games.get(day, 0)) for day in days]
 
 
 def _match_rows(

@@ -112,6 +112,13 @@ class LadderTeam(SQLModel):
     players: list[LadderPlayer] = []
 
 
+class LadderSeasonDay(SQLModel):
+    """One day of the season, and the matches played on it counted once each."""
+
+    d: IsoDate
+    g: int = 0  # the client draws one bar per day
+
+
 class LadderSeason(SQLModel):
     """The season the ladder answer covers."""
 
@@ -130,6 +137,10 @@ class SeasonLadder(SQLModel):
     total_games: int = 0
     # 7 weekdays by 24 hours, UTC, distinct matches. Row 0 is Sunday.
     by_hour: list[list[int]] = []
+    # One entry per day of the season window, distinct matches, 0 on empty days
+    per_day: list[LadderSeasonDay] = []
+    # Every rule of the season; a player's locked ones are these less his earned
+    achievement_rules: list[Achievement] = []
     teams: list[LadderTeam] = []
 
 
