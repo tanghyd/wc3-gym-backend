@@ -22,6 +22,7 @@ from app.core import ladder
 from app.core.achievements import ACHIEVEMENTS
 from app.core.db import Session
 from app.models.enums import Race
+from app.models.ladder_achievement import LadderAchievement, default_rows
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.user import User
@@ -61,6 +62,8 @@ def second_season(season_id: int) -> int:
             end_date=first.end_date,
         )
         session.add(other)
+        session.flush()
+        session.add_all(default_rows(other.id))
         session.commit()
         return other.id
 
@@ -468,7 +471,7 @@ def test_the_season_per_day_covers_every_day_of_the_window(
     assert body["per_day"][2] == {"d": "2026-01-07", "g": 1}
 
 
-def test_the_season_answer_costs_ten_statements(
+def test_the_season_answer_costs_eleven_statements(
     app: FastAPI, league: dict[str, Any]
 ) -> None:
     """The count is a constant: it does not grow with the number of players."""
@@ -484,7 +487,93 @@ def test_the_season_answer_costs_ten_statements(
     # The rules are a constant and the day counts are the total_games group
     assert body.achievement_rules == ACHIEVEMENTS
     assert sum(day.g for day in body.per_day) == 4
-    assert tally[0] == 10
+    assert tally[0] == 11
+
+
+# The achievement set: one instance per season, per rule.
+
+
+def rule_row_id(season_id: int, rule_id: str) -> int:
+    with Session() as session:
+        return (
+            session.scalars(
+                select(LadderAchievement).where(
+                    LadderAchievement.season_id == season_id,
+                    LadderAchievement.rule_id == rule_id,
+                )
+            )
+            .one()
+            .id
+        )
+
+
+def repay(season_id: int, rule_id: str, **fields: int) -> None:
+    """Change what one season pays for one rule, leaving other seasons alone."""
+    row_id = rule_row_id(season_id, rule_id)
+    with Session() as session:
+        row = session.get(LadderAchievement, row_id)
+        for key, value in fields.items():
+            setattr(row, key, value)
+        session.commit()
+
+
+def test_a_season_pays_its_own_price_for_a_rule(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The same rule is two rows, so re-pricing one season moves only that one."""
+    season = league["season_id"]
+    other = second_season(season)
+    player = league["player_ids"][0]
+    sign_up(other, [player])
+    add_match(player, "a", start_time=INSIDE)
+
+    repay(season, "win_first", points=99)
+
+    mine = player_of(ladder_of(client, auth_headers, season), player)
+    resp = client.get(f"/users/{player}/ladder?season_id={other}", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    theirs = resp.json()
+
+    assert [(b["id"], b["points"]) for b in mine["achievements"]] == [("win_first", 99)]
+    assert [(b["id"], b["points"]) for b in theirs["achievements"]] == [
+        ("win_first", 15)
+    ]
+    assert mine["points"] == mine["ladder_points"] + 99
+
+
+def test_a_season_drops_a_rule_by_not_paying_it(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    season = league["season_id"]
+    player = league["player_ids"][0]
+    add_match(player, "a", start_time=INSIDE)
+
+    row_id = rule_row_id(season, "win_first")
+    with Session() as session:
+        session.delete(session.get(LadderAchievement, row_id))
+        session.commit()
+
+    body = ladder_of(client, auth_headers, season)
+    row = player_of(body, player)
+    assert row["achievements"] == []
+    assert row["points"] == row["ladder_points"]
+    assert "win_first" not in {rule["id"] for rule in body["achievement_rules"]}
+
+
+def test_the_season_goal_is_the_target_it_was_given(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """ladder_goal reads a number the season sets, not one baked into the code."""
+    season = league["season_id"]
+    player = league["player_ids"][0]
+    for index in range(4):
+        add_match(player, f"g{index}", start_time=INSIDE + timedelta(hours=index))
+
+    repay(season, "ladder_goal", target=12)
+
+    row = player_of(ladder_of(client, auth_headers, season), player)
+    assert row["ladder_points"] == 12
+    assert "ladder_goal" in {b["id"] for b in row["achievements"]}
 
 
 # The player route.

@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload, noload, selectinload
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.query import QueryElement, QueryUtil
 from app.models.enums import Race
+from app.models.ladder_achievement import default_rows
 from app.models.map import Map
 from app.models.relationships import DBMapSeason, DBUserSeasonSignup
 from app.models.season import Season, SeasonCreate, SeasonPublic, SeasonUpdate
@@ -27,6 +28,9 @@ class SeasonService(BaseService):
     def add(self, season: SeasonCreate) -> SeasonPublic:
         with self.get_session() as session:
             new_season = Season.add(session, season.model_dump())
+            # A new season scores like the last one until an admin re-prices it
+            session.add_all(default_rows(new_season.id))
+            session.flush()
             return SeasonPublic.from_season(new_season)
 
     def update(self, season_id: int, season: SeasonUpdate) -> SeasonPublic:

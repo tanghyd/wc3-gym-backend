@@ -21,7 +21,7 @@ this module by the day it started on, because the table keeps a start time.
 """
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Protocol
@@ -63,6 +63,22 @@ class Achievement:
     name: str
     description: str
     icon: str
+
+
+@dataclass(frozen=True)
+class Paid:
+    """What one season pays for one rule.
+
+    `target` is the number the rule compares against, and only the two goal
+    rules read one; every other rule carries its threshold in code.
+    """
+
+    points: int
+    target: int | None = None
+
+
+# Which rules a scope pays, and how much, keyed by rule id
+PaidSet = Mapping[str, Paid]
 
 
 class RaceValue(Protocol):
@@ -287,6 +303,7 @@ def top_race(wins: Sequence[AchievementRow]) -> tuple[str, int] | None:
 def earned(
     rows: Sequence[AchievementRow],
     points: int,
+    paid: PaidSet,
     opponents: frozenset[str] = frozenset(),
     coaches: frozenset[str] = frozenset(),
     is_coach: bool = False,
@@ -294,7 +311,9 @@ def earned(
     """Every achievement one player earned, worth most first.
 
     `rows` are his scoped matches oldest first, `points` his ladder points,
-    `opponents` and `coaches` are battle tags in lower case.
+    `paid` what this scope pays for each rule, and `opponents` and `coaches`
+    are battle tags in lower case. A rule the scope does not pay is not
+    evaluated into the answer, so a season keeps only the rules it defines.
     """
     if not rows:
         # No match means no first game, and 0 points reaches no goal
@@ -312,46 +331,65 @@ def earned(
     race = top_race(wins)
 
     found: list[Achievement] = []
-    found.append(WIN_FIRST if rows[0].won else LOSE_FIRST)
+
+    def pay(rule: Achievement, extra: int = 0, suffix: str = "") -> None:
+        """Award a rule at what this scope pays for it, if it pays it at all."""
+        deal = paid.get(rule.id)
+        if deal is None:
+            return
+        found.append(
+            replace(
+                rule,
+                points=deal.points + extra,
+                description=rule.description + suffix,
+            )
+        )
+
+    pay(WIN_FIRST if rows[0].won else LOSE_FIRST)
     if len(wins) >= 100:
-        found.append(WINNER_WINNER)
+        pay(WINNER_WINNER)
     if len(losses) >= 100:
-        found.append(SAD_TROMBONE)
+        pay(SAD_TROMBONE)
     if any(row.mmr_after == ELITE_MMR for row in rows):
-        found.append(ELITE)
+        pay(ELITE)
     if longest_run(results, False) >= 10:
-        found.append(DATS_FAKT_AP)
+        pay(DATS_FAKT_AP)
     if longest_run(results, True) >= 5:
-        found.append(WIN_STREAK)
+        pay(WIN_STREAK)
     if longest_run(results, True) >= 10:
-        found.append(WIN_STREAK_2)
+        pay(WIN_STREAK_2)
     if kills:
-        found.append(_more(DUCK_HUNTING, 5 * kills, f" - {kills} kill(s)"))
+        pay(DUCK_HUNTING, 5 * kills, f" - {kills} kill(s)")
     if not is_coach and any(tag in coaches for tag in beaten):
-        found.append(I_AM_THE_CAPTAIN_NOW)
+        pay(I_AM_THE_CAPTAIN_NOW)
     # Only the race beaten most pays, and only above 10 wins, not at 10
     if race is not None and race[1] > 10 and race[0] in RACE_ACHIEVEMENTS:
-        found.append(_more(RACE_ACHIEVEMENTS[race[0]], race[1], f" - {race[1]} wins!"))
+        pay(RACE_ACHIEVEMENTS[race[0]], race[1], f" - {race[1]} wins!")
     if won_maps.issuperset(HOLIDAY_MAPS):
-        found.append(HOLIDAY)
+        pay(HOLIDAY)
     if won_maps.issuperset(WINTER_MAPS):
-        found.append(WINTER)
+        pay(WINTER)
     if won_maps.issuperset(NEW_MAPS):
-        found.append(NEWBIE)
+        pay(NEWBIE)
     if won_maps.issuperset(LADDER_MAPS):
-        found.append(WIN_EVERY_MAP)
+        pay(WIN_EVERY_MAP)
     if _longest(wins) > LONG_GAME_S and _longest(losses) > LONG_GAME_S:
-        found.append(JOIN_THEM)
+        pay(JOIN_THEM)
     if max(len(day) for day in days.values()) >= 30:
-        found.append(ADDICTED)
+        pay(ADDICTED)
     if max(daily_mmr) > 100:
-        found.append(RISING_STAR)
+        pay(RISING_STAR)
     if min(daily_mmr) < -100:
-        found.append(FALLING_STAR)
-    if points >= LADDER_GOAL:
-        found.append(LADDER_GOAL_REACHED)
-    if points >= LADDER_GOAL * 2:
-        found.append(DOUBLE_UP)
+        pay(FALLING_STAR)
+    # The only two rules whose threshold is data: the season sets its goal
+    if (goal := paid.get(LADDER_GOAL_REACHED.id)) and points >= (
+        goal.target if goal.target is not None else LADDER_GOAL
+    ):
+        pay(LADDER_GOAL_REACHED)
+    if (double := paid.get(DOUBLE_UP.id)) and points >= (
+        double.target if double.target is not None else LADDER_GOAL * 2
+    ):
+        pay(DOUBLE_UP)
 
     found.sort(key=lambda item: -item.points)
     return found
@@ -372,8 +410,9 @@ def _longest(rows: Sequence[AchievementRow]) -> int:
     return max((row.duration_s for row in rows), default=0)
 
 
-def _more(base: Achievement, extra: int, suffix: str) -> Achievement:
-    """A rule that pays per match, with the count written into the badge."""
-    return replace(
-        base, points=base.points + extra, description=base.description + suffix
-    )
+# What a season pays when nobody has changed it: the wc3.no set, at its own
+# prices. The migration seeds every season with exactly this.
+DEFAULT_TARGETS = {LADDER_GOAL_REACHED.id: LADDER_GOAL, DOUBLE_UP.id: LADDER_GOAL * 2}
+DEFAULT_PAID: PaidSet = {
+    rule.id: Paid(rule.points, DEFAULT_TARGETS.get(rule.id)) for rule in ACHIEVEMENTS
+}

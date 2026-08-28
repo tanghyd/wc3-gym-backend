@@ -62,7 +62,12 @@ def run(
     rows: Sequence[achievements.AchievementRow], points: int = 0, **kwargs: object
 ) -> set[str]:
     """The ids of the rules these rows earn."""
-    return {item.id for item in achievements.earned(rows, points, **kwargs)}
+    return {
+        item.id
+        for item in achievements.earned(
+            rows, points, achievements.DEFAULT_PAID, **kwargs
+        )
+    }
 
 
 def paid(
@@ -70,7 +75,9 @@ def paid(
 ) -> Achievement:
     """The earned rule itself, for the ones that pay a variable amount."""
     return next(
-        item for item in achievements.earned(rows, 0, **kwargs) if item.id == rule_id
+        item
+        for item in achievements.earned(rows, 0, achievements.DEFAULT_PAID, **kwargs)
+        if item.id == rule_id
     )
 
 
@@ -83,7 +90,7 @@ def series(results: list[bool]) -> list[Row]:
 
 
 def test_no_match_earns_nothing() -> None:
-    assert achievements.earned([], 0) == []
+    assert achievements.earned([], 0, achievements.DEFAULT_PAID) == []
 
 
 def test_win_first_and_lose_first_read_the_oldest_match() -> None:
@@ -410,7 +417,7 @@ def test_the_rules_read_the_stored_rows(league: dict[str, Any]) -> None:
     assert run(rows) == {"win_first"}
 
 
-def test_the_user_answer_costs_ten_statements(league: dict[str, Any]) -> None:
+def test_the_user_answer_costs_eleven_statements(league: dict[str, Any]) -> None:
     """The count is a constant: it does not grow with the number of matches."""
     from app.services.ladder import LadderService
 
@@ -422,4 +429,4 @@ def test_the_user_answer_costs_ten_statements(league: dict[str, Any]) -> None:
         answer = LadderService().user_ladder(player, league["season_id"])
 
     assert answer.games == 4
-    assert tally[0] == 10
+    assert tally[0] == 11
