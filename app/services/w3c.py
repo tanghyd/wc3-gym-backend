@@ -198,7 +198,11 @@ class W3CService:
             offset += len(page)
 
     def parse_match(self, match: dict[str, Any]) -> list[W3CLadderMatchCreate]:
-        """One row per player of a 1v1 match. Anything else answers nothing."""
+        """One row per player of a 1v1 match. Anything else answers nothing.
+
+        Each side keeps both races: the one selected, which is what the
+        league scores by, and the one played, which resolves a random pick.
+        """
         players = [
             team["players"][0]
             for team in match.get("teams") or []
@@ -215,9 +219,11 @@ class W3CService:
                 start_time=start_time.replace(tzinfo=None),
                 duration_s=match["durationInSeconds"],
                 map_name=match.get("mapName"),
-                race=self._played_race(player),
+                race=self.get_race_enum(player.get("race")),
+                played_race=self._played_race(player),
                 opp_battletag=opponent.get("battleTag"),
-                opp_race=self._played_race(opponent),
+                opp_race=self.get_race_enum(opponent.get("race")),
+                opp_played_race=self._played_race(opponent),
                 won=bool(player.get("won")),
                 mmr_before=player.get("oldMmr"),
                 mmr_after=player.get("currentMmr"),

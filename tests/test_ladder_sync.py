@@ -129,8 +129,8 @@ def test_the_parser_reads_a_captured_page() -> None:
     assert row.won is True
 
 
-def test_a_random_pick_reads_as_the_race_played() -> None:
-    """A random match stores the race the player got, not RANDOM."""
+def test_a_random_pick_keeps_the_pick_and_the_roll() -> None:
+    """The league scores the selected race, so a random pick stays RANDOM."""
     match, player = next(
         (match, player)
         for match in THANKS + PSIKE
@@ -143,8 +143,27 @@ def test_a_random_pick_reads_as_the_race_played() -> None:
         r for r in W3CService().parse_match(match) if r.battleTag == player["battleTag"]
     )
 
-    assert row.race == W3CService().get_race_enum(player["rndRace"])
-    assert row.race is not Race.RANDOM
+    assert row.race is Race.RANDOM
+    assert row.played_race == W3CService().get_race_enum(player["rndRace"])
+    assert row.played_race is not Race.RANDOM
+
+
+def test_a_normal_pick_reads_the_same_race_twice() -> None:
+    """Nothing was rolled, so the selected race is the race played."""
+    match, player = next(
+        (match, player)
+        for match in THANKS + PSIKE
+        for team in match["teams"]
+        for player in team["players"]
+        if player["race"] != 0
+    )
+
+    row = next(
+        r for r in W3CService().parse_match(match) if r.battleTag == player["battleTag"]
+    )
+
+    assert row.race == W3CService().get_race_enum(player["race"])
+    assert row.played_race == row.race
 
 
 # The walk over pages and seasons.
