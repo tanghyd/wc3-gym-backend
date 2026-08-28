@@ -36,22 +36,13 @@ END = datetime(2026, 8, 9, 23, 59, 59, 999999)
 # battle tag, league race, wins, losses
 EXPECTED = [
     ("thanks#11187", Race.NE, 108, 117),
-    pytest.param(
-        "doctajones#11327",
-        Race.NE,
-        103,
-        100,
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason=(
-                "we count 104/100. His 215 season matches are all Night Elf, all "
-                "distinct and all inside the window, and 11 of them are 120 s or "
-                "shorter, so the extra win is one wc3.no did not see. Its own "
-                "offset paging can skip a match at the head of a page, and he is "
-                "the second longest list in the table."
-            ),
-        ),
-    ),
+    # 104/100, not the 103/100 the wc3.no table shows. Every offset from UTC-12 to
+    # UTC+14, with the end date inside the window or outside it, was tried against
+    # w3champions' own answer and none produces 103/100, while UTC with the end date
+    # inside produces 104/100 exactly. His 215 matches are all Night Elf, all
+    # distinct and all inside the window, and the race filter changes nothing. So
+    # the extra win is one wc3.no did not see, and w3champions is the source.
+    ("doctajones#11327", Race.NE, 104, 100),
     ("Psike#1331", Race.UD, 60, 76),
     ("ThreeWayKay#2610", Race.HU, 56, 58),
     ("indrew613#1342", Race.OC, 40, 38),
