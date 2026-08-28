@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from sqlalchemy import Index
 from sqlmodel import Field, SQLModel
 
+from app.core.achievements import Achievement
 from app.models.base import DBModel
 from app.models.enums import Race
 from app.models.types import EnumValue, IsoDate
@@ -80,7 +81,10 @@ class LadderPlayer(SQLModel):
     name: str | None = None
     battleTag: str | None = None
     race: Annotated[str | None, EnumValue] = None
+    # Ladder points plus achievement points, the total wc3.no publishes
     points: int = 0
+    # The 3/1 rule on its own, without the achievements
+    ladder_points: int = 0
     wins: int = 0
     losses: int = 0
     games: int = 0
@@ -88,8 +92,8 @@ class LadderPlayer(SQLModel):
     per_day: list[LadderDay] = []
     # Wins and losses against each race, keyed by the race the opponent played
     vs_race: dict[str, list[int]] = {}
-    # The achievement rules ship in their own PR
-    achievements: list[Any] = []
+    # The rules of core.achievements this player earned, worth most first
+    achievements: list[Achievement] = []
 
 
 class LadderTeam(SQLModel):
@@ -98,6 +102,7 @@ class LadderTeam(SQLModel):
     id: int
     name: str | None = None
     points: int = 0
+    ladder_points: int = 0
     games: int = 0
     players: list[LadderPlayer] = []
 

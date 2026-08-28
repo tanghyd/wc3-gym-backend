@@ -27,13 +27,14 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
 
-from app.core import ladder
+from app.core import achievements, ladder
 from app.core.db import Session
 from app.core.exceptions import NotFoundError, W3CThrottledError
 from app.models.enums import Race
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.team import Team
+from app.models.team_season import DBTeamSeason
 from app.models.user import User, UserReduced
 from app.models.user_team_season import DBUserTeamSeason
 from app.models.w3c_ladder_match import (
@@ -74,37 +75,17 @@ class LadderService:
     def season_ladder(self, season_id: int) -> SeasonLadder:
         """The ladder of one season: its teams, its players and its hours.
 
-        Seven statements, whatever the number of players: the season, the
-        signups with their team, and one group each for the totals, the days,
-        the races, the hours and the distinct match count.
+        Nine statements, whatever the number of players: the season, the
+        signups with their team, one group each for the totals, the days, the
+        races, the hours and the distinct match count, then the matches the
+        achievements read and the season's coaches.
         """
         with Session.begin() as session:
             season = session.get(Season, season_id)
             if season is None:
                 raise NotFoundError("Season not found")
 
-            roster = session.execute(
-                select(
-                    User.id.label("user_id"),
-                    User.name.label("name"),
-                    User.battleTag.label("battleTag"),
-                    User.race.label("race"),
-                    User.ladder_synced_at.label("synced_at"),
-                    Team.id.label("team_id"),
-                    Team.name.label("team_name"),
-                )
-                .join(DBUserSeasonSignup, DBUserSeasonSignup.user_id == User.id)
-                .outerjoin(
-                    DBUserTeamSeason,
-                    and_(
-                        DBUserTeamSeason.user_id == User.id,
-                        DBUserTeamSeason.season_id == season_id,
-                    ),
-                )
-                .outerjoin(Team, Team.id == DBUserTeamSeason.team_id)
-                .where(DBUserSeasonSignup.season_id == season_id)
-                .order_by(User.id)
-            ).all()
+            roster = _roster(session, season_id)
 
             scope = _scope([row.user_id for row in roster], _window(season))
             totals = _totals(session, scope)
@@ -114,6 +95,7 @@ class LadderService:
             total_games = session.scalar(
                 select(func.count(distinct(W3CLadderMatch.w3c_match_id))).where(*scope)
             )
+            earned = _earned(session, scope, roster, totals, season_id)
             stamps = [row.synced_at for row in roster if row.synced_at]
             return SeasonLadder(
                 season=LadderSeason(
@@ -124,7 +106,7 @@ class LadderService:
                 ),
                 total_games=int(total_games or 0),
                 by_hour=by_hour,
-                teams=_teams(roster, totals, days, races),
+                teams=_teams(roster, totals, days, races, earned),
             )
 
     def user_ladder(
@@ -137,7 +119,8 @@ class LadderService:
         """One player's record, and one page of the matches behind it.
 
         A season names the window; without one the answer is his whole
-        history. Five statements, six with a season.
+        history. Six statements, nine with a season, which adds the season,
+        its roster and its coaches for the achievements that read a team.
         """
         with Session.begin() as session:
             user = session.execute(
@@ -159,12 +142,16 @@ class LadderService:
                 window = _window(season)
 
             scope = _scope([user_id], window)
+            totals = _totals(session, scope)
+            roster = _roster(session, season_id) if season_id is not None else []
+            earned = _earned(session, scope, roster, totals, season_id)
             answer = _player(
                 UserLadder,
                 user,
-                _totals(session, scope).get(user_id),
+                totals.get(user_id),
                 _per_day(session, scope).get(user_id, []),
                 _vs_race(session, scope).get(user_id, {}),
+                earned.get(user_id, []),
             )
             answer.matches = _matches(session, scope, limit, offset)
             return answer
@@ -343,6 +330,32 @@ def _window(season: Season) -> tuple[datetime, datetime]:
     )
 
 
+def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
+    """Everyone signed up for the season, with the team he plays for."""
+    return session.execute(
+        select(
+            User.id.label("user_id"),
+            User.name.label("name"),
+            User.battleTag.label("battleTag"),
+            User.race.label("race"),
+            User.ladder_synced_at.label("synced_at"),
+            Team.id.label("team_id"),
+            Team.name.label("team_name"),
+        )
+        .join(DBUserSeasonSignup, DBUserSeasonSignup.user_id == User.id)
+        .outerjoin(
+            DBUserTeamSeason,
+            and_(
+                DBUserTeamSeason.user_id == User.id,
+                DBUserTeamSeason.season_id == season_id,
+            ),
+        )
+        .outerjoin(Team, Team.id == DBUserTeamSeason.team_id)
+        .where(DBUserSeasonSignup.season_id == season_id)
+        .order_by(User.id)
+    ).all()
+
+
 def _league_race() -> ColumnElement[bool]:
     """A player scores on the race he is registered with, and on no other.
 
@@ -485,6 +498,77 @@ def _by_hour(session: OrmSession, scope: list[ColumnElement[bool]]) -> list[list
     return matrix
 
 
+def _match_rows(
+    session: OrmSession, scope: list[ColumnElement[bool]]
+) -> dict[int, list[W3CLadderMatch]]:
+    """Every scoped match, per player, oldest first. One statement for all."""
+    rows: dict[int, list[W3CLadderMatch]] = defaultdict(list)
+    for match in session.scalars(
+        select(W3CLadderMatch)
+        .where(*scope)
+        .order_by(W3CLadderMatch.user_id, W3CLadderMatch.start_time, W3CLadderMatch.id)
+    ):
+        rows[match.user_id].append(match)
+    return rows
+
+
+def _coach_tags(session: OrmSession, season_id: int) -> frozenset[str]:
+    """The battle tags of every coach of the season, in lower case."""
+    tags = session.scalars(
+        select(User.battleTag)
+        .join(
+            DBTeamSeason,
+            or_(
+                DBTeamSeason.coach_1_id == User.id,
+                DBTeamSeason.coach_2_id == User.id,
+                DBTeamSeason.coach_3_id == User.id,
+            ),
+        )
+        .where(DBTeamSeason.season_id == season_id)
+    )
+    return frozenset(tag.lower() for tag in tags if tag)
+
+
+def _opponents(roster: Sequence[Row]) -> dict[int, frozenset[str]]:
+    """Per player, the tags of everyone signed up on another team."""
+    by_team: dict[int | None, set[str]] = defaultdict(set)
+    for row in roster:
+        if row.battleTag:
+            by_team[row.team_id].add(row.battleTag.lower())
+    everyone: set[str] = set().union(*by_team.values()) if by_team else set()
+    return {row.user_id: frozenset(everyone - by_team[row.team_id]) for row in roster}
+
+
+def _earned(
+    session: OrmSession,
+    scope: list[ColumnElement[bool]],
+    roster: Sequence[Row],
+    totals: dict[int, Row],
+    season_id: int | None,
+) -> dict[int, list[achievements.Achievement]]:
+    """Every player's achievements, over the rows the totals already read.
+
+    Two statements whatever the number of players: the matches and the
+    coaches. A player with no match earns nothing.
+    """
+    rows = _match_rows(session, scope)
+    if not rows:
+        return {}
+    opponents = _opponents(roster)
+    coaches = _coach_tags(session, season_id) if season_id is not None else frozenset()
+    tags = {row.user_id: (row.battleTag or "").lower() for row in roster}
+    return {
+        user_id: achievements.earned(
+            matches,
+            int(totals[user_id].points or 0) if user_id in totals else 0,
+            opponents.get(user_id, frozenset()),
+            coaches,
+            tags.get(user_id, "") in coaches,
+        )
+        for user_id, matches in rows.items()
+    }
+
+
 def _empty_races() -> dict[str, list[int]]:
     """Every race at 0-0, so the client draws a full row."""
     return {race.value: [0, 0] for race in Race}
@@ -515,14 +599,18 @@ def _player[T: LadderPlayer](
     total: Row | None,
     days: list[Row],
     races: dict[str, list[int]],
+    earned: Sequence[achievements.Achievement] = (),
 ) -> T:
     """One player row of an answer. A player with no match reads zeros."""
+    ladder_points = int(total.points or 0) if total is not None else 0
     return shape(
         id=user.user_id,
         name=user.name,
         battleTag=user.battleTag,
         race=user.race,
-        points=int(total.points or 0) if total is not None else 0,
+        points=ladder_points + achievements.total_points(earned),
+        ladder_points=ladder_points,
+        achievements=list(earned),
         wins=int(total.wins or 0) if total is not None else 0,
         losses=int((total.games or 0) - (total.wins or 0)) if total is not None else 0,
         games=int(total.games or 0) if total is not None else 0,
@@ -545,6 +633,7 @@ def _teams(
     totals: dict[int, Row],
     days: dict[int, list[Row]],
     races: dict[int, dict[str, list[int]]],
+    earned: dict[int, list[achievements.Achievement]],
 ) -> list[LadderTeam]:
     """The teams of the season, each with the players signed up on it.
 
@@ -564,9 +653,11 @@ def _teams(
             totals.get(row.user_id),
             days.get(row.user_id, []),
             races.get(row.user_id, {}),
+            earned.get(row.user_id, []),
         )
         team.players.append(player)
         team.points += player.points
+        team.ladder_points += player.ladder_points
         team.games += player.games
     for team in teams.values():
         team.players.sort(key=lambda player: (-player.points, player.name or ""))

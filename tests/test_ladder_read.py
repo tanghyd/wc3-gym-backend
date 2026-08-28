@@ -157,7 +157,7 @@ def test_a_short_match_is_no_game(
 
     assert body["total_games"] == 1
     row = player_of(body, player)
-    assert (row["games"], row["wins"], row["points"]) == (1, 1, 3)
+    assert (row["games"], row["wins"], row["ladder_points"]) == (1, 1, 3)
 
 
 # The season window.
@@ -222,8 +222,10 @@ def test_the_teams_carry_the_points_of_their_players(
     body = ladder_of(client, auth_headers, league["season_id"])
 
     team = next(t for t in body["teams"] if t["name"] == "Alpha")
-    assert (team["points"], team["games"]) == (4, 2)
-    assert [player["id"] for player in team["players"]] == [one, two]
+    assert (team["ladder_points"], team["games"]) == (4, 2)
+    # The loser leads the card: lose_first pays 25 where win_first pays 15
+    assert (team["points"], team["games"]) == (4 + 15 + 25, 2)
+    assert [player["id"] for player in team["players"]] == [two, one]
 
 
 # The shapes the page draws.
@@ -309,7 +311,7 @@ def test_by_hour_buckets_the_matches_by_utc_weekday_and_hour(
     assert sum(sum(row) for row in body["by_hour"]) == 2
 
 
-def test_the_season_answer_costs_seven_statements(
+def test_the_season_answer_costs_nine_statements(
     app: FastAPI, league: dict[str, Any]
 ) -> None:
     """The count is a constant: it does not grow with the number of players."""
@@ -322,7 +324,7 @@ def test_the_season_answer_costs_seven_statements(
         body = LadderService().season_ladder(league["season_id"])
 
     assert body.total_games == 4
-    assert tally[0] == 7
+    assert tally[0] == 9
 
 
 # The player route.
