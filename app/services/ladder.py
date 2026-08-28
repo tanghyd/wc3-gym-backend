@@ -102,13 +102,12 @@ class LadderService:
             games = _games_per_day(session, scope)
             paid = _paid(session, season_id)
             earned = _earned(session, scope, roster, totals, season_id, paid)
-            stamps = [row.synced_at for row in roster if row.synced_at]
             return SeasonLadder(
                 season=LadderSeason(
                     id=season.id,
                     start_date=season.start_date,
                     end_date=season.end_date,
-                    synced_at=max(stamps) if stamps else None,
+                    synced_at=season.ladder_synced_at,
                 ),
                 # A match starts on one day, so the days add up to the total
                 total_games=sum(games.values()),
@@ -182,8 +181,11 @@ class LadderService:
             season = session.get(Season, season_id)
             if season is None:
                 raise NotFoundError("Season not found")
-            # A season without a start date reads every match the walk reaches
-            since = datetime.combine(season.start_date or date.min, time.min)
+            # A season without dates reads every match the walk reaches
+            since, end = _window(season)
+            # A window still open ends in the pinned season; a closed one is
+            # dated by the matches already stored
+            walk_from = None if end >= _now() else _walk_start(session, end)
             total = session.scalar(
                 select(func.count())
                 .select_from(DBUserSeasonSignup)
@@ -202,22 +204,35 @@ class LadderService:
             UserReduced(id=row.id, name=row.name, battleTag=row.battleTag)
             for row in rows
         ]
-        result = self.sync_users(users, since)
+        result = self.sync_users(users, since, walk_from)
         done = offset + len(users)
+        next_offset = done if done < (total or 0) else None
+        if next_offset is None:
+            # The season is synced once the last chunk has run, not before
+            with Session.begin() as session:
+                session.execute(
+                    update(Season)
+                    .where(Season.id == season_id)
+                    .values(ladder_synced_at=_now())
+                )
         return LadderSyncResult(
-            **result.model_dump(),
-            total=total or 0,
-            next_offset=done if done < (total or 0) else None,
+            **result.model_dump(), total=total or 0, next_offset=next_offset
         )
 
-    def sync_users(self, users: list[UserReduced], since: datetime) -> W3CSyncResult:
-        """Store the matches these players started at or after `since`."""
+    def sync_users(
+        self, users: list[UserReduced], since: datetime, season: int | None = None
+    ) -> W3CSyncResult:
+        """Store the matches these players started at or after `since`.
+
+        The walk starts at `season`, or at the pinned season without one.
+        """
         result = W3CSyncResult()
         if not users:
             return result
 
         w3c_service = W3CService(settings_app_service=self.settings_app_service)
-        season = w3c_service.current_season()
+        if season is None:
+            season = w3c_service.current_season()
         owners = self._user_ids_by_battle_tag()
         synced: set[int] = set()
         failures: dict[int, str] = {}
@@ -344,6 +359,18 @@ def _window(season: Season) -> tuple[datetime, datetime]:
     )
 
 
+def _walk_start(session: OrmSession, end: datetime) -> int | None:
+    """The W3C season the GNL window ends in: the newest stored season that
+    began at or before `end`. None while no match is stored."""
+    return session.scalar(
+        select(W3CLadderMatch.wc3_season)
+        .group_by(W3CLadderMatch.wc3_season)
+        .having(func.min(W3CLadderMatch.start_time) <= end)
+        .order_by(W3CLadderMatch.wc3_season.desc())
+        .limit(1)
+    )
+
+
 def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
     """Everyone signed up for the season, with the team he plays for."""
     return session.execute(
@@ -353,7 +380,6 @@ def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
             User.battleTag.label("battleTag"),
             User.country.label("country"),
             User.race.label("race"),
-            User.ladder_synced_at.label("synced_at"),
             Team.id.label("team_id"),
             Team.name.label("team_name"),
             Team.long_name.label("team_long_name"),

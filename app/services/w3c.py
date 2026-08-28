@@ -31,7 +31,7 @@ MATCH_PAGE_SIZE = 100
 # Seasons the match walk may step back from the one it starts at. The search
 # needs a season id and w3champions publishes no season dates, so a window
 # that reaches into an older season is walked, not looked up.
-MATCH_SEASON_STEPS = 4
+MATCH_SEASON_STEPS = 6
 
 # One connection pool for every w3champions call, so a sync pays no new TCP handshake.
 _session = requests.Session()
@@ -134,19 +134,17 @@ class W3CService:
     ) -> list[W3CLadderMatchCreate]:
         """Every 1v1 match this player started at or after `since`.
 
-        Pages the season newest first and steps back a season while the
-        oldest match seen is still newer than `since`.
+        Pages the season newest first and steps back a season until a page
+        older than `since` is seen, at most MATCH_SEASON_STEPS times.
         """
         rows: dict[str, list[W3CLadderMatchCreate]] = {}
-        empty_seasons = 0
         for step in range(MATCH_SEASON_STEPS + 1):
             current = season - step
             if current < 0:
                 break
-            reached, seen = self._page_season(battle_tag, current, since, rows)
-            empty_seasons = 0 if seen else empty_seasons + 1
-            # Two silent seasons in a row mean the player has nothing older
-            if reached or empty_seasons == 2:
+            # A season with no match says nothing about the ones below it, so
+            # only a page older than `since` ends the walk before the cap
+            if self._page_season(battle_tag, current, since, rows):
                 break
         matches = [row for match_rows in rows.values() for row in match_rows]
         return sorted(matches, key=lambda row: row.start_time)
@@ -157,15 +155,13 @@ class W3CService:
         season: int,
         since: datetime,
         rows: dict[str, list[W3CLadderMatchCreate]],
-    ) -> tuple[bool, bool]:
-        """Page one season into `rows`. Answers whether `since` was reached
-        and whether the season held any match.
+    ) -> bool:
+        """Page one season into `rows`. Answers whether `since` was reached.
 
         Matches are keyed by their w3champions id, so a match that arrives at
         the head between two calls cannot land twice.
         """
         offset = 0
-        seen = False
         while True:
             body = self.send_request(
                 method=self.GET,
@@ -181,8 +177,7 @@ class W3CService:
             )
             page = (body or {}).get("matches") or []
             if not page:
-                return False, seen
-            seen = True
+                return False
             oldest = None
             for match in page:
                 parsed = self.parse_match(match)
@@ -192,9 +187,9 @@ class W3CService:
                 start = parsed[0].start_time
                 oldest = start if oldest is None else min(oldest, start)
             if oldest is not None and oldest < since:
-                return True, seen
+                return True
             if len(page) < MATCH_PAGE_SIZE:
-                return False, seen
+                return False
             offset += len(page)
 
     def parse_match(self, match: dict[str, Any]) -> list[W3CLadderMatchCreate]:

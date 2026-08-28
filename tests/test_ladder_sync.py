@@ -17,6 +17,8 @@ from sqlalchemy import func, select
 
 from app.core.db import Session
 from app.models.enums import Race
+from app.models.relationships import DBUserSeasonSignup
+from app.models.season import Season
 from app.models.user import User, UserCreate, UserReduced
 from app.models.w3c_ladder_match import W3CLadderMatch
 from app.services import w3c as w3c_module
@@ -87,6 +89,33 @@ def add_player(name: str, battle_tag: str) -> UserReduced:
             race=Race.HU,
         )
     )
+
+
+def sign_up(season_id: int, user_id: int) -> None:
+    with Session() as session:
+        session.add(DBUserSeasonSignup(user_id=user_id, season_id=season_id))
+        session.commit()
+
+
+def store_match(user_id: int, season: int, start_time: datetime) -> None:
+    """One stored match, which is what dates a w3champions season."""
+    with Session() as session:
+        session.add(
+            W3CLadderMatch(
+                w3c_match_id=f"stored-{season}",
+                user_id=user_id,
+                wc3_season=season,
+                start_time=start_time,
+                duration_s=600,
+                won=True,
+            )
+        )
+        session.commit()
+
+
+def stamp_of(season_id: int) -> datetime | None:
+    with Session() as session:
+        return session.get(Season, season_id).ladder_synced_at
 
 
 def stored() -> list[W3CLadderMatch]:
@@ -181,17 +210,19 @@ def test_the_paging_stops_at_the_first_page_older_than_since(
     assert fake.calls == [(W3C_SEASON, offset) for offset in range(0, last + 1, 10)]
 
 
-def test_the_walk_steps_back_a_season_and_stops_on_two_silent_ones(
+def test_the_walk_reads_past_the_seasons_the_player_sat_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A window reaching into the previous season is walked, not looked up."""
+    """Silent seasons say nothing about the ones below them."""
     fake = serve(
-        monkeypatch, {W3C_SEASON: THANKS[:20], W3C_SEASON - 1: PSIKE[:5]}, page_size=10
+        monkeypatch,
+        {W3C_SEASON - 2: THANKS[:20], W3C_SEASON - 3: PSIKE[:5]},
+        page_size=10,
     )
 
     rows = W3CService().get_player_matches("thanks#11187", W3C_SEASON, SINCE)
 
-    assert fake.seasons() == [25, 25, 25, 24, 23, 22]
+    assert fake.seasons() == [25, 24, 23, 23, 23, 22, 21, 20, 19]
     assert len({row.w3c_match_id for row in rows}) == 25
 
 
@@ -202,7 +233,7 @@ def test_the_walk_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
 
     W3CService().get_player_matches("thanks#11187", W3C_SEASON, SINCE)
 
-    assert fake.seasons() == [25, 24, 23, 22, 21]
+    assert fake.seasons() == [25, 24, 23, 22, 21, 20, 19]
 
 
 # The sync, against the database.
@@ -277,6 +308,66 @@ def test_a_player_with_no_matches_is_stamped(
     with Session() as session:
         assert session.get(User, thanks.id).ladder_synced_at is not None
     assert stored() == []
+
+
+def test_the_season_sync_starts_the_walk_at_the_season_its_window_ends_in(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backfill pages the seasons its window sits in, not the newest ones."""
+    player = seeded["player_ids"][0]
+    sign_up(seeded["season_id"], player)
+    # The seeded season runs 2026-01-05 to 2026-02-27
+    store_match(player, W3C_SEASON - 5, datetime(2026, 1, 10))
+    store_match(player, W3C_SEASON, datetime(2026, 8, 1))
+    fake = serve(monkeypatch, {})
+
+    LadderService().sync_season(seeded["season_id"])
+
+    assert fake.seasons() == [20, 19, 18, 17, 16, 15, 14]
+
+
+def test_a_season_still_running_starts_the_walk_at_the_pinned_season(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No stored match names a season w3champions only just opened."""
+    player = seeded["player_ids"][0]
+    sign_up(seeded["season_id"], player)
+    store_match(player, W3C_SEASON - 1, datetime(2026, 1, 10))
+    with Session() as session:
+        session.get(Season, seeded["season_id"]).end_date = None
+        session.commit()
+    fake = serve(monkeypatch, {})
+
+    LadderService().sync_season(seeded["season_id"])
+
+    assert fake.seasons()[0] == W3C_SEASON
+
+
+def test_the_season_sync_starts_at_the_pin_while_nothing_is_stored(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first sync of all has no match to date a season by."""
+    sign_up(seeded["season_id"], seeded["player_ids"][0])
+    fake = serve(monkeypatch, {})
+
+    LadderService().sync_season(seeded["season_id"])
+
+    assert fake.seasons()[0] == W3C_SEASON
+
+
+def test_the_season_is_stamped_by_the_last_chunk_alone(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A half-finished backfill must not read as a synced season."""
+    for player in seeded["player_ids"][:2]:
+        sign_up(seeded["season_id"], player)
+    serve(monkeypatch, {})
+
+    assert stamp_of(seeded["season_id"]) is None
+    LadderService().sync_season(seeded["season_id"], limit=1)
+    assert stamp_of(seeded["season_id"]) is None
+    LadderService().sync_season(seeded["season_id"], offset=1, limit=1)
+    assert stamp_of(seeded["season_id"]) is not None
 
 
 # The route. It runs in chunks, because one request per season would outlive

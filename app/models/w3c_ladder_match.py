@@ -129,7 +129,7 @@ class LadderSeason(SQLModel):
     id: int
     start_date: IsoDate | None = None
     end_date: IsoDate | None = None
-    # The newest ladder_synced_at among the players signed up
+    # When the last chunk of a ladder sync of this season finished
     synced_at: datetime | None = None
 
 
