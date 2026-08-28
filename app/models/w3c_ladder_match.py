@@ -106,6 +106,8 @@ class LadderTeam(SQLModel):
 
     id: int
     name: str | None = None
+    # The name to print where there is room; `name` is the tag the tables use
+    long_name: str | None = None
     points: int = 0
     ladder_points: int = 0
     games: int = 0
