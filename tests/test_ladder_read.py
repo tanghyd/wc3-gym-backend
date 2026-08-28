@@ -72,8 +72,8 @@ def add_match(
     duration_s: int = 600,
     won: bool = True,
     opp_race: Race = Race.HU,
-    mmr_before: int = 1500,
-    mmr_after: int = 1512,
+    mmr_before: int | None = 1500,
+    mmr_after: int | None = 1512,
     opp_battletag: str = "Someone#1234",
     race: Race | None = None,
     played_race: Race | None = None,
@@ -304,6 +304,63 @@ def test_per_day_holds_one_row_a_day_and_the_last_mmr_of_it(
     assert row["mmr"] == {"start": 1500, "min": 1499, "max": 1520, "current": 1520}
 
 
+def test_a_match_too_short_to_score_still_moves_the_mmr(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The duration rule pays points; it does not decide what the MMR did."""
+    player = league["player_ids"][0]
+    add_match(
+        player,
+        "drop-first",
+        start_time=INSIDE,
+        duration_s=60,
+        won=False,
+        mmr_before=1400,
+        mmr_after=1380,
+    )
+    add_match(
+        player,
+        "game",
+        start_time=INSIDE + timedelta(hours=1),
+        mmr_before=1380,
+        mmr_after=1392,
+    )
+    add_match(
+        player,
+        "drop-last",
+        start_time=INSIDE + timedelta(hours=2),
+        duration_s=60,
+        won=False,
+        mmr_before=1392,
+        mmr_after=1370,
+    )
+
+    row = player_of(ladder_of(client, auth_headers, league["season_id"]), player)
+
+    assert (row["games"], row["wins"], row["ladder_points"]) == (1, 1, 3)
+    assert row["mmr"] == {"start": 1400, "min": 1370, "max": 1400, "current": 1370}
+
+
+def test_a_placement_match_has_no_mmr_to_open_the_span_with(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """w3champions publishes no MMR until the player is rated."""
+    player = league["player_ids"][0]
+    add_match(player, "place", start_time=INSIDE, mmr_before=None, mmr_after=None)
+    add_match(
+        player,
+        "rated",
+        start_time=INSIDE + timedelta(hours=1),
+        mmr_before=1150,
+        mmr_after=1160,
+    )
+
+    row = player_of(ladder_of(client, auth_headers, league["season_id"]), player)
+
+    assert row["games"] == 2
+    assert row["mmr"] == {"start": 1150, "min": 1150, "max": 1160, "current": 1160}
+
+
 def test_vs_race_holds_every_race(
     client: Client, auth_headers: dict[str, str], league: dict[str, Any]
 ) -> None:
@@ -411,7 +468,7 @@ def test_the_season_per_day_covers_every_day_of_the_window(
     assert body["per_day"][2] == {"d": "2026-01-07", "g": 1}
 
 
-def test_the_season_answer_costs_nine_statements(
+def test_the_season_answer_costs_ten_statements(
     app: FastAPI, league: dict[str, Any]
 ) -> None:
     """The count is a constant: it does not grow with the number of players."""
@@ -427,7 +484,7 @@ def test_the_season_answer_costs_nine_statements(
     # The rules are a constant and the day counts are the total_games group
     assert body.achievement_rules == ACHIEVEMENTS
     assert sum(day.g for day in body.per_day) == 4
-    assert tally[0] == 9
+    assert tally[0] == 10
 
 
 # The player route.

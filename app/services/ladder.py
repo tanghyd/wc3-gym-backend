@@ -76,10 +76,10 @@ class LadderService:
     def season_ladder(self, season_id: int) -> SeasonLadder:
         """The ladder of one season: its teams, its players and its hours.
 
-        Nine statements, whatever the number of players: the season, the
-        signups with their team, one group each for the totals, the player
-        days, the races, the hours and the season days, then the matches the
-        achievements read and the season's coaches.
+        Ten statements, whatever the number of players: the season, the
+        signups with their team, one group each for the totals, the MMR spans,
+        the player days, the races, the hours and the season days, then the
+        matches the achievements read and the season's coaches.
         """
         with Session.begin() as session:
             season = session.get(Season, season_id)
@@ -88,8 +88,11 @@ class LadderService:
 
             roster = _roster(session, season_id)
 
-            scope = _scope([row.user_id for row in roster], _window(season), season_id)
+            user_ids = [row.user_id for row in roster]
+            window = _window(season)
+            scope = _scope(user_ids, window, season_id)
             totals = _totals(session, scope)
+            spans = _mmr_span(session, _mmr_scope(user_ids, window, season_id))
             days = _per_day(session, scope)
             races = _vs_race(session, scope)
             by_hour = _by_hour(session, scope)
@@ -108,7 +111,7 @@ class LadderService:
                 by_hour=by_hour,
                 per_day=_season_days(season, games),
                 achievement_rules=achievements.ACHIEVEMENTS,
-                teams=_teams(roster, totals, days, races, earned),
+                teams=_teams(roster, totals, spans, days, races, earned),
             )
 
     def user_ladder(
@@ -121,7 +124,7 @@ class LadderService:
         """One player's record, and one page of the matches behind it.
 
         A season names the window; without one the answer is his whole
-        history. Six statements, nine with a season, which adds the season,
+        history. Seven statements, ten with a season, which adds the season,
         its roster and its coaches for the achievements that read a team.
         """
         with Session.begin() as session:
@@ -145,12 +148,14 @@ class LadderService:
 
             scope = _scope([user_id], window, season_id)
             totals = _totals(session, scope)
+            spans = _mmr_span(session, _mmr_scope([user_id], window, season_id))
             roster = _roster(session, season_id) if season_id is not None else []
             earned = _earned(session, scope, roster, totals, season_id)
             answer = _player(
                 UserLadder,
                 user,
                 totals.get(user_id),
+                spans.get(user_id),
                 _per_day(session, scope).get(user_id, []),
                 _vs_race(session, scope).get(user_id, {}),
                 earned.get(user_id, []),
@@ -386,16 +391,19 @@ def _league_race(season_id: int | None) -> ColumnElement[bool]:
     return W3CLadderMatch.race == race
 
 
-def _scope(
+def _mmr_scope(
     user_ids: Sequence[int],
     window: tuple[datetime, datetime] | None,
     season_id: int | None,
 ) -> list[ColumnElement[bool]]:
-    """The rows one ladder answer reads: these players, on their league race,
-    in this window, and only matches long enough to be a game."""
+    """Every match the MMR span reads: these players, on their league race, in
+    this window, however short.
+
+    A match too short to score still moves the player's MMR, so the span that
+    reports what his MMR did is wider than the scope that pays him for it.
+    """
     where: list[ColumnElement[bool]] = [
         W3CLadderMatch.user_id.in_(user_ids),
-        ladder.counted_clause(W3CLadderMatch.duration_s),
         _league_race(season_id),
     ]
     if window is not None:
@@ -404,8 +412,21 @@ def _scope(
     return where
 
 
+def _scope(
+    user_ids: Sequence[int],
+    window: tuple[datetime, datetime] | None,
+    season_id: int | None,
+) -> list[ColumnElement[bool]]:
+    """The rows one ladder answer scores: the MMR scope, less the matches too
+    short to be a game. Points and achievements both read this."""
+    return [
+        *_mmr_scope(user_ids, window, season_id),
+        ladder.counted_clause(W3CLadderMatch.duration_s),
+    ]
+
+
 def _totals(session: OrmSession, scope: list[ColumnElement[bool]]) -> dict[int, Row]:
-    """The record, the points and the MMR range of every player, in one group."""
+    """The record and the points of every player, in one group."""
     rows = session.execute(
         select(
             W3CLadderMatch.user_id.label("user_id"),
@@ -414,13 +435,56 @@ def _totals(session: OrmSession, scope: list[ColumnElement[bool]]) -> dict[int, 
             func.sum(
                 ladder.points_case(W3CLadderMatch.won, W3CLadderMatch.duration_s)
             ).label("points"),
-            func.min(W3CLadderMatch.mmr_before).label("min_before"),
-            func.max(W3CLadderMatch.mmr_before).label("max_before"),
-            func.min(W3CLadderMatch.mmr_after).label("min_after"),
-            func.max(W3CLadderMatch.mmr_after).label("max_after"),
         )
         .where(*scope)
         .group_by(W3CLadderMatch.user_id)
+    ).all()
+    return {row.user_id: row for row in rows}
+
+
+def _mmr_span(session: OrmSession, scope: list[ColumnElement[bool]]) -> dict[int, Row]:
+    """Where every player's MMR opened, its range, and where it stands.
+
+    Reads the rated matches only. w3champions publishes no MMR for a placement
+    match, at either end, so the span runs from the first rated match to the
+    last and a player still placing has none at all.
+    """
+    rated = [*scope, W3CLadderMatch.mmr_before.is_not(None)]
+    ordered = (
+        select(
+            W3CLadderMatch.user_id.label("user_id"),
+            W3CLadderMatch.mmr_before.label("mmr_before"),
+            W3CLadderMatch.mmr_after.label("mmr_after"),
+            func.row_number()
+            .over(
+                partition_by=W3CLadderMatch.user_id,
+                order_by=(W3CLadderMatch.start_time, W3CLadderMatch.id),
+            )
+            .label("oldest"),
+            func.row_number()
+            .over(
+                partition_by=W3CLadderMatch.user_id,
+                order_by=(W3CLadderMatch.start_time.desc(), W3CLadderMatch.id.desc()),
+            )
+            .label("newest"),
+        )
+        .where(*rated)
+        .subquery()
+    )
+    rows = session.execute(
+        select(
+            ordered.c.user_id.label("user_id"),
+            func.max(case((ordered.c.oldest == 1, ordered.c.mmr_before))).label(
+                "start"
+            ),
+            func.max(case((ordered.c.newest == 1, ordered.c.mmr_after))).label(
+                "current"
+            ),
+            func.min(ordered.c.mmr_before).label("min_before"),
+            func.max(ordered.c.mmr_before).label("max_before"),
+            func.min(ordered.c.mmr_after).label("min_after"),
+            func.max(ordered.c.mmr_after).label("max_after"),
+        ).group_by(ordered.c.user_id)
     ).all()
     return {row.user_id: row for row in rows}
 
@@ -631,17 +695,17 @@ def _as_date(value: object) -> date:
     return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
 
 
-def _mmr(total: Row | None, days: list[Row]) -> LadderMmr:
+def _mmr(span: Row | None) -> LadderMmr:
     """The MMR the window opened at, its range, and where it stands."""
-    if total is None:
+    if span is None:
         return LadderMmr()
-    lows = [v for v in (total.min_before, total.min_after) if v is not None]
-    highs = [v for v in (total.max_before, total.max_after) if v is not None]
+    lows = [v for v in (span.min_before, span.min_after) if v is not None]
+    highs = [v for v in (span.max_before, span.max_after) if v is not None]
     return LadderMmr(
-        start=days[0].first_mmr if days else None,
+        start=span.start,
         min=min(lows) if lows else None,
         max=max(highs) if highs else None,
-        current=days[-1].last_mmr if days else None,
+        current=span.current,
     )
 
 
@@ -649,6 +713,7 @@ def _player[T: LadderPlayer](
     shape: type[T],
     user: Row,
     total: Row | None,
+    span: Row | None,
     days: list[Row],
     races: dict[str, list[int]],
     earned: Sequence[achievements.Achievement] = (),
@@ -666,7 +731,7 @@ def _player[T: LadderPlayer](
         wins=int(total.wins or 0) if total is not None else 0,
         losses=int((total.games or 0) - (total.wins or 0)) if total is not None else 0,
         games=int(total.games or 0) if total is not None else 0,
-        mmr=_mmr(total, days),
+        mmr=_mmr(span),
         per_day=[
             LadderDay(
                 d=_as_date(day.day),
@@ -683,6 +748,7 @@ def _player[T: LadderPlayer](
 def _teams(
     roster: Sequence[Row],
     totals: dict[int, Row],
+    spans: dict[int, Row],
     days: dict[int, list[Row]],
     races: dict[int, dict[str, list[int]]],
     earned: dict[int, list[achievements.Achievement]],
@@ -703,6 +769,7 @@ def _teams(
             LadderPlayer,
             row,
             totals.get(row.user_id),
+            spans.get(row.user_id),
             days.get(row.user_id, []),
             races.get(row.user_id, {}),
             earned.get(row.user_id, []),
