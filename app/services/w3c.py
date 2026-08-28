@@ -145,12 +145,19 @@ class W3CService:
     ) -> tuple[list[W3CLadderMatchCreate], dict[int, bool]]:
         """The matches of these w3champions seasons, each read from its own `since`.
 
-        Answers the matches, and per season whether it was read to its end.
+        Answers the matches, and per season whether it was read to its end. A
+        throttle carries what was read before it on the refusal it raises.
         """
         rows: dict[str, list[W3CLadderMatchCreate]] = {}
         complete: dict[int, bool] = {}
         for season, since in seasons:
-            complete[season] = self._page_season(battle_tag, season, since, rows)[1]
+            try:
+                complete[season] = self._page_season(battle_tag, season, since, rows)[1]
+            except W3CThrottledError as refusal:
+                # The seasons already read are worth keeping, so they ride out
+                # with the refusal. The season it cut short names none.
+                refusal.fetched = (_by_start_time(rows), complete)
+                raise
         return _by_start_time(rows), complete
 
     def walk_player_matches(

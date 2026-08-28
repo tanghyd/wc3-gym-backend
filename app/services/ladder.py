@@ -335,7 +335,11 @@ class LadderService:
         owners: dict[str, int],
     ) -> None:
         """Fetch what this player still owes the plan and write every row a
-        GNL player owns."""
+        GNL player owns.
+
+        A throttle part way through the plan still writes the seasons read
+        before it, and then refuses the player.
+        """
         with Session.begin() as session:
             ledger = {
                 row.wc3_season: row
@@ -348,18 +352,29 @@ class LadderService:
                 )
             }
 
-        if plan.seasons is None:
-            matches, complete = w3c_service.walk_player_matches(
-                user.battleTag, plan.walk_from, plan.since
-            )
-        else:
-            wanted = []
-            for season in plan.seasons:
-                row = ledger.get(season)
-                is_open = season == plan.open_season
-                if not _read_to_the_end(row, is_open):
-                    wanted.append((season, _since_of(row, is_open, plan.since)))
-            matches, complete = w3c_service.get_player_matches(user.battleTag, wanted)
+        throttled: W3CThrottledError | None = None
+        try:
+            if plan.seasons is None:
+                matches, complete = w3c_service.walk_player_matches(
+                    user.battleTag, plan.walk_from, plan.since
+                )
+            else:
+                wanted = []
+                for season in plan.seasons:
+                    row = ledger.get(season)
+                    is_open = season == plan.open_season
+                    if not _read_to_the_end(row, is_open):
+                        wanted.append((season, _since_of(row, is_open, plan.since)))
+                matches, complete = w3c_service.get_player_matches(
+                    user.battleTag, wanted
+                )
+        except W3CThrottledError as refusal:
+            # The seasons read before the refusal are written and stamped, so
+            # the next run asks for the ones it never reached
+            if refusal.fetched is None:
+                raise
+            matches, complete = refusal.fetched
+            throttled = refusal
 
         by_user: dict[int, list[W3CLadderMatchCreate]] = defaultdict(list)
         for row in matches:
@@ -381,6 +396,8 @@ class LadderService:
             session.execute(
                 update(User).where(User.id == user.id).values(ladder_synced_at=stamp)
             )
+        if throttled is not None:
+            raise throttled
 
     def _stamp(
         self,

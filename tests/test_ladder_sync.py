@@ -16,6 +16,7 @@ from httpx2 import Client
 from sqlalchemy import func, select
 
 from app.core.db import Session
+from app.core.exceptions import W3CThrottledError
 from app.models.enums import Race
 from app.models.ladder_sync import LadderSync
 from app.models.relationships import DBUserSeasonSignup
@@ -25,7 +26,7 @@ from app.models.w3c_ladder_match import W3CLadderMatch
 from app.services import w3c as w3c_module
 from app.services.ladder import LadderService
 from app.services.users import UserService
-from app.services.w3c import W3CService
+from app.services.w3c import THROTTLED_MESSAGE, W3CService
 
 FIXTURES = Path(__file__).parent / "data" / "w3c"
 
@@ -49,8 +50,13 @@ PSIKE = fixture("psike_1331_season25")
 class FakeW3C:
     """W3Champions with a fixed set of matches per season, and a call log."""
 
-    def __init__(self, by_season: dict[int, list[dict[str, Any]]]) -> None:
+    def __init__(
+        self,
+        by_season: dict[int, list[dict[str, Any]]],
+        throttle_on: int | None = None,
+    ) -> None:
         self.by_season = by_season
+        self.throttle_on = throttle_on
         self.calls: list[tuple[int, int]] = []
         # The `since` each season was last paged from, which is what makes a
         # read of the open season incremental
@@ -61,6 +67,8 @@ class FakeW3C:
     ) -> dict[str, Any]:
         season, offset = params["season"], params["offset"]
         self.calls.append((season, offset))
+        if season == self.throttle_on:
+            raise W3CThrottledError(THROTTLED_MESSAGE)
         matches = self.by_season.get(season, [])
         return {
             "matches": matches[offset : offset + params["pageSize"]],
@@ -75,8 +83,9 @@ def serve(
     monkeypatch: pytest.MonkeyPatch,
     by_season: dict[int, list[dict[str, Any]]],
     page_size: int = 100,
+    throttle_on: int | None = None,
 ) -> FakeW3C:
-    fake = FakeW3C(by_season)
+    fake = FakeW3C(by_season, throttle_on)
     paged = W3CService._page_season
 
     def page(
@@ -442,6 +451,26 @@ def test_a_walk_that_stops_early_is_written_as_unfinished(
     LadderService().sync_season(seeded["season_id"])
 
     assert ledger_of(player)[W3C_SEASON - 1].complete is False
+
+
+def test_a_throttle_keeps_the_seasons_read_before_it(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The finished season is written and stamped; the refused one is not."""
+    thanks = add_player("thanks", "thanks#11187")
+    sign_up(seeded["season_id"], thanks.id)
+    # The window sits in two w3champions seasons, read newest first
+    store_match(thanks.id, W3C_SEASON, datetime(2026, 1, 10))
+    store_match(thanks.id, W3C_SEASON - 1, datetime(2026, 1, 11))
+    serve(monkeypatch, {W3C_SEASON: THANKS[:3]}, throttle_on=W3C_SEASON - 1)
+
+    result = LadderService().sync_season(seeded["season_id"])
+
+    assert [failure.reason for failure in result.failed] == [THROTTLED_MESSAGE]
+    assert len(stored()) == 5
+    ledger = ledger_of(thanks.id)
+    assert ledger[W3C_SEASON].complete is True
+    assert W3C_SEASON - 1 not in ledger
 
 
 def test_the_open_season_is_read_again_from_its_own_stamp(
