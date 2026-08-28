@@ -18,10 +18,15 @@ class W3CLadderMatchBase(SQLModel):
     start_time: datetime
     duration_s: int
     map_name: str | None = Field(default=None, max_length=50)
-    # The race this player played, with a random pick resolved
+    # The race this player selected, RANDOM when he picked random
     race: Race | None = None
+    # The race he played, a random pick resolved to what it rolled
+    played_race: Race | None = None
     opp_battletag: str | None = Field(default=None, max_length=50)
+    # The race the opponent selected, RANDOM when he picked random
     opp_race: Race | None = None
+    # The race the opponent played, a random pick resolved
+    opp_played_race: Race | None = None
     won: bool
     mmr_before: int | None = None
     mmr_after: int | None = None
@@ -90,7 +95,7 @@ class LadderPlayer(SQLModel):
     games: int = 0
     mmr: LadderMmr = LadderMmr()
     per_day: list[LadderDay] = []
-    # Wins and losses against each race, keyed by the race the opponent played
+    # Wins and losses against each race, keyed by the race the opponent selected
     vs_race: dict[str, list[int]] = {}
     # The rules of core.achievements this player earned, worth most first
     achievements: list[Achievement] = []
@@ -136,8 +141,10 @@ class LadderMatchPublic(SQLModel):
     duration_s: int
     map_name: str | None = None
     race: Annotated[str | None, EnumValue] = None
+    played_race: Annotated[str | None, EnumValue] = None
     opp_battletag: str | None = None
     opp_race: Annotated[str | None, EnumValue] = None
+    opp_played_race: Annotated[str | None, EnumValue] = None
     won: bool
     mmr_before: int | None = None
     mmr_after: int | None = None

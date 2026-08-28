@@ -47,8 +47,11 @@ def add_match(
     mmr_after: int = 1512,
     opp_battletag: str = "Someone#1234",
     race: Race | None = None,
+    played_race: Race | None = None,
+    opp_played_race: Race | None = None,
 ) -> None:
-    """One stored match. Without a race it is played on the league race."""
+    """One stored match. Without a race it is selected on the league race,
+    and without a played race each side played the race it selected."""
     with Session() as session:
         session.add(
             W3CLadderMatch(
@@ -59,8 +62,10 @@ def add_match(
                 duration_s=duration_s,
                 map_name="Last Refuge",
                 race=race or session.get(User, user_id).race,
+                played_race=played_race or race or session.get(User, user_id).race,
                 opp_battletag=opp_battletag,
                 opp_race=opp_race,
+                opp_played_race=opp_played_race or opp_race,
                 won=won,
                 mmr_before=mmr_before,
                 mmr_after=mmr_after,
@@ -440,6 +445,56 @@ def test_the_public_user_shape_carries_the_ladder_stamp(
 
     assert body["ladder_synced_at"] is None
     assert "w3c_synced_at" in body
+
+
+def test_a_random_player_scores_his_random_picks_alone(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The rule reads the selected race, so RANDOM means the random picks."""
+    player = league["player_ids"][0]
+    with Session() as session:
+        session.get(User, player).race = Race.RANDOM
+        session.commit()
+    add_match(player, "rolled", race=Race.RANDOM, played_race=Race.NE)
+    add_match(player, "picked", race=Race.NE, start_time=INSIDE + timedelta(hours=1))
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 1
+    assert player_of(body, player)["games"] == 1
+
+
+def test_a_random_pick_that_rolled_the_league_race_pays_nothing(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """A player registered HU scores the HU he picked, not the HU he rolled."""
+    player = league["player_ids"][0]
+    add_match(player, "picked", race=Race.HU)
+    add_match(
+        player,
+        "rolled",
+        race=Race.RANDOM,
+        played_race=Race.HU,
+        start_time=INSIDE + timedelta(hours=1),
+    )
+
+    body = ladder_of(client, auth_headers, league["season_id"])
+
+    assert body["total_games"] == 1
+    assert player_of(body, player)["games"] == 1
+
+
+def test_vs_race_buckets_a_random_opponent_under_random(
+    client: Client, auth_headers: dict[str, str], league: dict[str, Any]
+) -> None:
+    """The versus panel reads the race the opponent selected, as wc3.no does."""
+    player = league["player_ids"][0]
+    add_match(player, "vs-random", opp_race=Race.RANDOM, opp_played_race=Race.UD)
+
+    row = player_of(ladder_of(client, auth_headers, league["season_id"]), player)
+
+    assert row["vs_race"]["RANDOM"] == [1, 0]
+    assert row["vs_race"]["UD"] == [0, 0]
 
 
 def test_a_match_on_another_race_is_practice(

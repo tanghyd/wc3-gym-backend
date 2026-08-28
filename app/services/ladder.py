@@ -357,14 +357,16 @@ def _roster(session: OrmSession, season_id: int) -> Sequence[Row]:
 
 
 def _league_race() -> ColumnElement[bool]:
-    """A player scores on the race he is registered with, and on no other.
+    """A player scores on the race he selected in game, and on no other.
 
     The league locks a player to one race, so a match on another race is
-    practice and pays nothing. A player registered RANDOM scores on every
-    race. This is the rule wc3.no scores by, proven by tests/test_ladder_oracle.
+    practice and pays nothing. The race compared is the selected one, so a
+    player registered RANDOM scores on his random picks alone and a player
+    registered on a normal race gets no random pick that rolled it. This is
+    the rule wc3.no scores by, proven by tests/test_ladder_oracle.
     """
     race = select(User.race).where(User.id == W3CLadderMatch.user_id).scalar_subquery()
-    return or_(race == Race.RANDOM, W3CLadderMatch.race == race)
+    return W3CLadderMatch.race == race
 
 
 def _scope(
@@ -457,7 +459,7 @@ def _per_day(
 def _vs_race(
     session: OrmSession, scope: list[ColumnElement[bool]]
 ) -> dict[int, dict[str, list[int]]]:
-    """Every player's record against each race the opponents played."""
+    """Every player's record against each race the opponents selected."""
     rows = session.execute(
         select(
             W3CLadderMatch.user_id.label("user_id"),

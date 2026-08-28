@@ -18,8 +18,6 @@ and only the single race the player beat most often ever pays.
 
 Two rules read a day. The bundle buckets by the UTC day a match ended on and
 this module by the day it started on, because the table keeps a start time.
-The race rule reads the opponent's race after a random pick is resolved,
-where the bundle reads Random.
 """
 
 from collections import defaultdict
