@@ -47,6 +47,8 @@ class User(UserBase, DBModel, table=True):
     race: Race
     # When the app last asked w3champions about this player, null when never
     w3c_synced_at: datetime | None = None
+    # When the app last asked w3champions for this player's ladder matches
+    ladder_synced_at: datetime | None = None
     team_seasons: list["DBUserTeamSeason"] = Relationship(
         back_populates="user", sa_relationship_kwargs={"cascade": "all, delete"}
     )

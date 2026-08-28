@@ -35,6 +35,7 @@ TABLES = {
     "user_season_signup",
     "user_team_season",
     "users",
+    "w3c_ladder_matches",
     "w3cstats",
 }
 
