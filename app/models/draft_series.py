@@ -1,13 +1,12 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Self
 
-from sqlalchemy import TIMESTAMP
 from sqlalchemy.sql.base import ExecutableOption
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import DBModel
 from app.models.match import MatchPublic
-from app.models.types import IsoDateTime, NaiveUTC, NumToStr
+from app.models.types import AwareUTC, NumToStr, UTCDateTime
 from app.models.user import UserPublic
 
 if TYPE_CHECKING:
@@ -17,7 +16,9 @@ if TYPE_CHECKING:
 
 class DraftSeriesBase(SQLModel):
     match_id: int = Field(index=True, foreign_key="matches.id")
-    date_time: Annotated[datetime | None, NaiveUTC] = None
+    date_time: Annotated[datetime | None, AwareUTC] = Field(
+        default=None, sa_type=UTCDateTime
+    )
     caster: Annotated[str | None, NumToStr] = Field(default=None, max_length=50)
     player1_id: int = Field(index=True, foreign_key="users.id")
     player2_id: int = Field(index=True, foreign_key="users.id")
@@ -31,7 +32,7 @@ class DraftSeries(DraftSeriesBase, DBModel, table=True):
     __tablename__ = "draft_series"
 
     id: int | None = Field(default=None, primary_key=True)
-    created_at: datetime | None = Field(default=None, sa_type=TIMESTAMP)
+    created_at: datetime | None = Field(default=None, sa_type=UTCDateTime)
 
     match: "Match" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[DraftSeries.match_id]"}
@@ -70,7 +71,7 @@ class DraftSeriesCreate(DraftSeriesBase):
 
 class DraftSeriesUpdate(SQLModel):
     match_id: int | None = None
-    date_time: Annotated[datetime | None, NaiveUTC] = None
+    date_time: Annotated[datetime | None, AwareUTC] = None
     caster: Annotated[str | None, NumToStr] = None
     player1_id: int | None = None
     player2_id: int | None = None
@@ -86,8 +87,8 @@ class DraftSeriesPublic(DraftSeriesBase):
     player1_id: int | None = None
     player2_id: int | None = None
     host_player_id: int | None = None
-    date_time: IsoDateTime | None = None
-    created_at: IsoDateTime | None = None
+    date_time: datetime | None = None
+    created_at: datetime | None = None
     match: MatchPublic | None = None
     player1: UserPublic | None = None
     player2: UserPublic | None = None

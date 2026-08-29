@@ -227,7 +227,9 @@ class UserService:
                 self._write_w3c_stats(session, user.id, s)
             # The stamp says when the app last asked, not that stats were found
             session.execute(
-                update(User).where(col(User.id) == user.id).values(w3c_synced_at=utcnow())
+                update(User)
+                .where(col(User.id) == user.id)
+                .values(w3c_synced_at=utcnow())
             )
 
     def _write_w3c_stats(

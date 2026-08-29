@@ -60,4 +60,4 @@ def test_a_caster_set_after_the_read_survives_the_player_edit(
     assert isinstance(result, dict), result
     written = read_series(series_id)
     assert written.caster == "Grubby"
-    assert written.date_time.isoformat() == "2026-01-09T20:00:00"
+    assert written.date_time.isoformat() == "2026-01-09T20:00:00+00:00"

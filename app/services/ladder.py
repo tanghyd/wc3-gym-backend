@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -505,8 +505,8 @@ class LadderService:
 def _window(season: Season) -> tuple[datetime, datetime]:
     """The season as an instant range; a missing date opens that end."""
     return (
-        datetime.combine(season.start_date or date.min, time.min),
-        datetime.combine(season.end_date or date.max, time.max),
+        datetime.combine(season.start_date or date.min, time.min, UTC),
+        datetime.combine(season.end_date or date.max, time.max, UTC),
     )
 
 
