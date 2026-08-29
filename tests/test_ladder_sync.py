@@ -24,6 +24,7 @@ from app.models.ladder_sync import LadderSync
 from app.models.relationships import DBUserSeasonSignup
 from app.models.season import Season
 from app.models.user import User, UserCreate, UserReduced
+from app.models.user_team_season import DBUserTeamSeason
 from app.models.w3c_ladder_match import W3CLadderMatch, W3CLadderMatchCreate
 from app.services import w3c as w3c_module
 from app.services.ladder import LadderService
@@ -129,9 +130,14 @@ def add_player(name: str, battle_tag: str) -> UserReduced:
     )
 
 
-def sign_up(season_id: int, user_id: int) -> None:
+def sign_up(season_id: int, user_id: int, team_id: int | None = None) -> None:
+    """Sign a player up, and put him on a team when one is named."""
     with Session() as session:
         session.add(DBUserSeasonSignup(user_id=user_id, season_id=season_id))
+        if team_id is not None:
+            session.add(
+                DBUserTeamSeason(user_id=user_id, team_id=team_id, season_id=season_id)
+            )
         session.commit()
 
 
@@ -298,10 +304,10 @@ def test_the_walk_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
 # The sync, against the database.
 
 
-def test_a_match_between_two_gnl_players_writes_both_rows(
+def test_a_sync_writes_no_row_for_the_opponent(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One payload carries both sides, so both rows are written at once."""
+    """The payload carries both sides; a worker writes the player it syncs."""
     match = next(m for m in THANKS if m["id"] == "6a6ea769ea6bb176a031b63d")
     thanks = add_player("thanks", "thanks#11187")
     rhax = add_player("rhax", "rhaxtamanN#2250")
@@ -311,9 +317,10 @@ def test_a_match_between_two_gnl_players_writes_both_rows(
 
     assert result.synced == [thanks.id]
     rows = {row.user_id: row for row in stored()}
+    assert set(rows) == {thanks.id}
     assert rows[thanks.id].won is False
-    assert rows[rhax.id].won is True
-    assert rows[rhax.id].opp_battletag == "thanks#11187"
+    assert rows[thanks.id].opp_battletag == "rhaxtamanN#2250"
+    assert rhax.id not in rows
 
 
 def test_a_second_sync_writes_no_second_row(
@@ -470,7 +477,7 @@ def test_a_throttle_keeps_the_seasons_read_before_it(
 ) -> None:
     """The finished season is written and stamped; the refused one is not."""
     thanks = add_player("thanks", "thanks#11187")
-    sign_up(seeded["season_id"], thanks.id)
+    sign_up(seeded["season_id"], thanks.id, seeded["team_a_id"])
     # The window sits in two w3champions seasons, read newest first
     store_match(thanks.id, W3C_SEASON, datetime(2026, 1, 10))
     store_match(thanks.id, W3C_SEASON - 1, datetime(2026, 1, 11))
@@ -657,6 +664,23 @@ def test_the_ladder_sync_route_stores_the_matches_of_the_signups(
     assert resp.json()["synced"] == [player]
     with Session() as session:
         assert session.scalar(select(func.count()).select_from(W3CLadderMatch)) == 4
+
+
+def test_the_season_sync_counts_the_players_on_a_team(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ladder page shows the players on a team, so the sync walks those."""
+    for player in seeded["player_ids"]:
+        sign_up(seeded["season_id"], player)
+    bench = add_player("bench", "bench#9999")
+    sign_up(seeded["season_id"], bench.id)
+    serve(monkeypatch, {})
+
+    result = LadderService().sync_season(seeded["season_id"])
+
+    assert result.total == len(seeded["player_ids"])
+    assert result.synced == seeded["player_ids"]
+    assert bench.id not in result.synced
 
 
 def test_the_ladder_sync_route_answers_404_for_an_unknown_season(
