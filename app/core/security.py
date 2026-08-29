@@ -10,12 +10,22 @@ from typing import Any
 import jwt
 
 
-def _mint(identity: str, token_type: str, minutes: int) -> str:
+def _mint(
+    identity: str,
+    token_type: str,
+    minutes: int,
+    role: str = "admin",
+    name: str | None = None,
+    avatar: str | None = None,
+) -> str:
     now = datetime.now(UTC)
     return jwt.encode(
         {
             "sub": identity,
             "type": token_type,
+            "role": role,
+            "name": name,
+            "avatar": avatar,
             "jti": str(uuid.uuid4()),
             "iat": now,
             "nbf": now,
@@ -26,12 +36,29 @@ def _mint(identity: str, token_type: str, minutes: int) -> str:
     )
 
 
-def create_access_token(identity: str, minutes: int) -> str:
-    return _mint(identity, "access", minutes)
+def create_access_token(
+    identity: str,
+    minutes: int,
+    role: str = "admin",
+    name: str | None = None,
+    avatar: str | None = None,
+) -> str:
+    return _mint(identity, "access", minutes, role, name, avatar)
 
 
-def create_refresh_token(identity: str, minutes: int) -> str:
-    return _mint(identity, "refresh", minutes)
+def create_refresh_token(
+    identity: str,
+    minutes: int,
+    role: str = "admin",
+    name: str | None = None,
+    avatar: str | None = None,
+) -> str:
+    return _mint(identity, "refresh", minutes, role, name, avatar)
+
+
+def create_state_token(minutes: int = 5) -> str:
+    """The signed value the Discord callback checks; not an access token."""
+    return _mint("state", "state", minutes, role="member")
 
 
 def decode_token(token: str) -> dict[str, Any]:

@@ -44,23 +44,32 @@ def _decode(credentials: _Credentials) -> dict[str, Any]:
         raise ApiError(422, {"error": str(e)}) from e
 
 
-def require_admin(credentials: _Credentials) -> str:
-    """Admit a valid access token and answer its subject."""
+def require_member(credentials: _Credentials) -> dict[str, Any]:
+    """Admit a valid access token and answer its claims."""
     claims = _decode(credentials)
     if claims.get("type") != "access":
         raise ApiError(422, {"error": "Only non-refresh tokens are allowed"})
+    return claims
+
+
+def require_admin(credentials: _Credentials) -> str:
+    """Admit an admin access token and answer its subject."""
+    claims = require_member(credentials)
+    if claims.get("role") != "admin" and claims["sub"] != "admin":
+        raise ApiError(403, {"error": "Admins only"})
     return claims["sub"]
 
 
-def require_refresh(credentials: _Credentials) -> str:
-    """Admit a valid refresh token and answer its subject."""
+def require_refresh(credentials: _Credentials) -> dict[str, Any]:
+    """Admit a valid refresh token and answer its claims."""
     claims = _decode(credentials)
     if claims.get("type") != "refresh":
         raise ApiError(422, {"error": "Only refresh tokens are allowed"})
-    return claims["sub"]
+    return claims
 
 
-RequireRefresh = Annotated[str, Depends(require_refresh)]
+RequireMember = Annotated[dict[str, Any], Depends(require_member)]
+RequireRefresh = Annotated[dict[str, Any], Depends(require_refresh)]
 
 
 settings_service = SettingsService()
