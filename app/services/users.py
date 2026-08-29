@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import joinedload, noload, selectinload
 from sqlmodel import col
 
-from app.core.db import Session
+from app.core.db import Session, rel
 from app.core.exceptions import NotFoundError, W3CThrottledError
 from app.core.query import QueryElement, QueryUtil
 from app.models.relationships import DBUserSeasonSignup
@@ -81,8 +81,8 @@ class UserService:
                 session.scalars(
                     select(User)
                     .options(
-                        joinedload(User.team_seasons).noload("*"),
-                        joinedload(User.w3c_stats),
+                        joinedload(rel(User.team_seasons)).noload("*"),
+                        joinedload(rel(User.w3c_stats)),
                     )
                     .where(col(User.id) == user_id)
                 )
@@ -131,10 +131,10 @@ class UserService:
             statement = (
                 select(User)
                 .options(
-                    noload(User.team_seasons),
-                    joinedload(User.w3c_stats),
-                    selectinload(User.signup_seasons).joinedload(
-                        DBUserSeasonSignup.season
+                    noload(rel(User.team_seasons)),
+                    joinedload(rel(User.w3c_stats)),
+                    selectinload(rel(User.signup_seasons)).joinedload(
+                        rel(DBUserSeasonSignup.season)
                     ),
                 )
                 .where(filter)
@@ -164,9 +164,11 @@ class UserService:
             result = []
             # The list row has no gnl_stats, so the link rows stay out
             statement = select(User).options(
-                noload(User.team_seasons),
-                joinedload(User.w3c_stats),
-                selectinload(User.signup_seasons).joinedload(DBUserSeasonSignup.season),
+                noload(rel(User.team_seasons)),
+                joinedload(rel(User.w3c_stats)),
+                selectinload(rel(User.signup_seasons)).joinedload(
+                    rel(DBUserSeasonSignup.season)
+                ),
             )
             # Offset paging is deterministic only with a fixed order
             statement = statement.order_by(col(User.id)).offset(offset)

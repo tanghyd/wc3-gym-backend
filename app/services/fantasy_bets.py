@@ -5,7 +5,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import joinedload
 from sqlmodel import col
 
-from app.core.db import Session
+from app.core.db import Session, rel
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.ordering import SortOrder, ordered
 from app.core.query import QueryElement, QueryUtil
@@ -168,17 +168,19 @@ class FantasyBetService:
             statement = (
                 select(FantasyBet)
                 .options(
-                    joinedload(FantasyBet.season).noload("*"),
-                    joinedload(FantasyBet.user).noload("*"),
-                    joinedload(FantasyBet.winner).noload("*"),
-                    joinedload(FantasyBet.series).noload("*"),
-                    joinedload(FantasyBet.series)
-                    .joinedload(Series.player1)
+                    joinedload(rel(FantasyBet.season)).noload("*"),
+                    joinedload(rel(FantasyBet.user)).noload("*"),
+                    joinedload(rel(FantasyBet.winner)).noload("*"),
+                    joinedload(rel(FantasyBet.series)).noload("*"),
+                    joinedload(rel(FantasyBet.series))
+                    .joinedload(rel(Series.player1))
                     .noload("*"),
-                    joinedload(FantasyBet.series)
-                    .joinedload(Series.player2)
+                    joinedload(rel(FantasyBet.series))
+                    .joinedload(rel(Series.player2))
                     .noload("*"),
-                    joinedload(FantasyBet.series).joinedload(Series.match).noload("*"),
+                    joinedload(rel(FantasyBet.series))
+                    .joinedload(rel(Series.match))
+                    .noload("*"),
                 )
                 .where(filter)
             )

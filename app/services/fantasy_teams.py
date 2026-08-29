@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from sqlmodel import col
 
-from app.core.db import Session
+from app.core.db import Session, rel
 from app.core.exceptions import NotFoundError
 from app.core.query import QueryElement, QueryUtil
 from app.models.fantasy_team import (
@@ -60,11 +60,11 @@ class FantasyTeamService:
 
     # Every relation the list answer reads; the sub-collections stay empty
     _reduced_options = (
-        joinedload(FantasyTeam.season).noload("*"),
-        joinedload(FantasyTeam.drafted_team).noload("*"),
-        joinedload(FantasyTeam.captain).noload("*"),
-        joinedload(FantasyTeam.drafted_players)
-        .joinedload(DBFantasyTeamPlayer.users)
+        joinedload(rel(FantasyTeam.season)).noload("*"),
+        joinedload(rel(FantasyTeam.drafted_team)).noload("*"),
+        joinedload(rel(FantasyTeam.captain)).noload("*"),
+        joinedload(rel(FantasyTeam.drafted_players))
+        .joinedload(rel(DBFantasyTeamPlayer.users))
         .noload("*"),
     )
 

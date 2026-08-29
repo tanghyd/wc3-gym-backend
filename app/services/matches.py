@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlmodel import col
 
-from app.core.db import Session
+from app.core.db import Session, rel
 from app.core.exceptions import NotFoundError
 from app.core.query import QueryElement, QueryUtil
 from app.models.match import Match, MatchCreate, MatchPublic, MatchUpdate
@@ -44,10 +44,10 @@ class MatchService:
                 session.scalars(
                     select(Match)
                     .options(
-                        joinedload(Match.team1).noload("*"),
-                        joinedload(Match.team2).noload("*"),
-                        joinedload(Match.season).noload("*"),
-                        joinedload(Match.fixed_map),
+                        joinedload(rel(Match.team1)).noload("*"),
+                        joinedload(rel(Match.team2)).noload("*"),
+                        joinedload(rel(Match.season)).noload("*"),
+                        joinedload(rel(Match.fixed_map)),
                     )
                     .where(col(Match.id) == match_id)
                     .limit(1)
@@ -72,10 +72,10 @@ class MatchService:
             statement = (
                 select(Match)
                 .options(
-                    joinedload(Match.team1).noload("*"),
-                    joinedload(Match.team2).noload("*"),
-                    joinedload(Match.season).noload("*"),
-                    joinedload(Match.fixed_map),
+                    joinedload(rel(Match.team1)).noload("*"),
+                    joinedload(rel(Match.team2)).noload("*"),
+                    joinedload(rel(Match.season)).noload("*"),
+                    joinedload(rel(Match.fixed_map)),
                 )
                 .where(filter)
             )

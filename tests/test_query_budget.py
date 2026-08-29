@@ -44,7 +44,7 @@ from fastapi import FastAPI
 from sqlalchemy import event, select
 from sqlalchemy.orm import joinedload
 
-from app.core.db import Session
+from app.core.db import Session, rel
 from app.core.query import QueryUtil
 from app.models.draft_series import DraftSeries
 from app.models.enums import Race
@@ -191,8 +191,8 @@ def test_options_cover_the_player_graph(league: dict[str, Any]) -> None:
     """
     options = (
         *Series._eager_options(),
-        joinedload(Series.player1).raiseload("*"),
-        joinedload(Series.player2).raiseload("*"),
+        joinedload(rel(Series.player1)).raiseload("*"),
+        joinedload(rel(Series.player2)).raiseload("*"),
     )
     with Session() as session:
         series = session.scalars(
@@ -423,7 +423,7 @@ def test_career_options_cover_the_player_graph(league: dict[str, Any]) -> None:
     """
     options = (
         *PlayerCareerStats.eager_options(),
-        joinedload(PlayerCareerStats.user).raiseload("*"),
+        joinedload(rel(PlayerCareerStats.user)).raiseload("*"),
     )
     with Session() as session:
         stats = session.scalars(

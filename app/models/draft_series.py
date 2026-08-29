@@ -5,6 +5,7 @@ from sqlalchemy import TIMESTAMP
 from sqlalchemy.sql.base import ExecutableOption
 from sqlmodel import Field, Relationship, SQLModel
 
+from app.core.db import rel
 from app.models.base import DBModel
 from app.models.match import MatchPublic
 from app.models.types import IsoDateTime, NumToStr
@@ -52,15 +53,15 @@ class DraftSeries(DraftSeriesBase, DBModel, table=True):
         from app.models.user import User
 
         return (
-            joinedload(cls.match).joinedload(Match.team1),
-            joinedload(cls.match).joinedload(Match.team2),
-            joinedload(cls.match).joinedload(Match.season),
-            joinedload(cls.player1).selectinload(User.w3c_stats),
-            joinedload(cls.player1).selectinload(User.team_seasons),
-            joinedload(cls.player1).selectinload(User.signup_seasons),
-            joinedload(cls.player2).selectinload(User.w3c_stats),
-            joinedload(cls.player2).selectinload(User.team_seasons),
-            joinedload(cls.player2).selectinload(User.signup_seasons),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team1)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team2)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.season)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.w3c_stats)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.team_seasons)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.signup_seasons)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.w3c_stats)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.team_seasons)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.signup_seasons)),
         )
 
 

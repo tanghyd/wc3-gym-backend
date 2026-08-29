@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, noload, selectinload
 from sqlmodel import col
 
-from app.core.db import Session
+from app.core.db import Session, rel
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.query import QueryElement, QueryUtil
 from app.models.enums import Race
@@ -54,10 +54,10 @@ class SeasonService:
                     select(Season)
                     .options(
                         # noload alone; a joined link table multiplies the rows
-                        noload(Season.user_teams),
-                        noload(Season.teams),
-                        selectinload(Season.maps).joinedload(DBMapSeason.map),
-                        noload(Season.signup_users),
+                        noload(rel(Season.user_teams)),
+                        noload(rel(Season.teams)),
+                        selectinload(rel(Season.maps)).joinedload(rel(DBMapSeason.map)),
+                        noload(rel(Season.signup_users)),
                     )
                     .where(col(Season.id) == season_id)
                 )
@@ -74,10 +74,10 @@ class SeasonService:
             # Eager load related entities, disable nested loading except for maps
             statement = select(Season).options(
                 # noload alone; a joined link table multiplies the rows
-                noload(Season.user_teams),
-                noload(Season.teams),
-                selectinload(Season.maps).joinedload(DBMapSeason.map),
-                noload(Season.signup_users),
+                noload(rel(Season.user_teams)),
+                noload(rel(Season.teams)),
+                selectinload(rel(Season.maps)).joinedload(rel(DBMapSeason.map)),
+                noload(rel(Season.signup_users)),
             )
             if limit is not None or offset:
                 # Offset paging is deterministic only with a fixed order
@@ -129,10 +129,10 @@ class SeasonService:
                 select(Season)
                 .options(
                     # noload alone; a joined link table multiplies the rows
-                    noload(Season.user_teams),
-                    noload(Season.teams),
-                    selectinload(Season.maps).joinedload(DBMapSeason.map),
-                    noload(Season.signup_users),
+                    noload(rel(Season.user_teams)),
+                    noload(rel(Season.teams)),
+                    selectinload(rel(Season.maps)).joinedload(rel(DBMapSeason.map)),
+                    noload(rel(Season.signup_users)),
                 )
                 .where(filter)
             )
@@ -281,10 +281,12 @@ class SeasonService:
             statement = (
                 select(DBUserSeasonSignup)
                 .options(
-                    joinedload(DBUserSeasonSignup.user)
-                    .joinedload(User.w3c_stats)
+                    joinedload(rel(DBUserSeasonSignup.user))
+                    .joinedload(rel(User.w3c_stats))
                     .noload("*"),
-                    joinedload(DBUserSeasonSignup.user).noload(User.team_seasons),
+                    joinedload(rel(DBUserSeasonSignup.user)).noload(
+                        rel(User.team_seasons)
+                    ),
                 )
                 .where(col(DBUserSeasonSignup.season_id) == season_id)
             )

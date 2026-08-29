@@ -5,6 +5,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.sql.base import ExecutableOption
 from sqlmodel import Field, Relationship, SQLModel
 
+from app.core.db import rel
 from app.models.base import DBModel
 from app.models.match import Match
 from app.models.relationships import DBMapSeason, DBUserSeasonSignup
@@ -49,28 +50,36 @@ class FantasyBet(FantasyBetBase, DBModel, table=True):
         """Every relation the public bet reads."""
         # A bet holds four users: both sides of the bet and both players
         players = (
-            joinedload(cls.user),
-            joinedload(cls.winner),
-            joinedload(cls.series).joinedload(Series.player1),
-            joinedload(cls.series).joinedload(Series.player2),
+            joinedload(rel(cls.user)),
+            joinedload(rel(cls.winner)),
+            joinedload(rel(cls.series)).joinedload(rel(Series.player1)),
+            joinedload(rel(cls.series)).joinedload(rel(Series.player2)),
         )
         return (
             # Collections use selectinload; a joined collection multiplies the rows
-            joinedload(cls.season)
-            .selectinload(Season.maps)
-            .joinedload(DBMapSeason.map),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.team1),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.team2),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.season),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.fixed_map),
+            joinedload(rel(cls.season))
+            .selectinload(rel(Season.maps))
+            .joinedload(rel(DBMapSeason.map)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.team1)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.team2)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.season)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.fixed_map)),
             *(
                 option
                 for player in players
                 for option in (
-                    player.selectinload(User.w3c_stats),
-                    player.selectinload(User.team_seasons),
-                    player.selectinload(User.signup_seasons).joinedload(
-                        DBUserSeasonSignup.season
+                    player.selectinload(rel(User.w3c_stats)),
+                    player.selectinload(rel(User.team_seasons)),
+                    player.selectinload(rel(User.signup_seasons)).joinedload(
+                        rel(DBUserSeasonSignup.season)
                     ),
                 )
             ),
@@ -80,15 +89,23 @@ class FantasyBet(FantasyBetBase, DBModel, table=True):
     def list_eager_options(cls) -> tuple[ExecutableOption, ...]:
         """The to-one relations the reduced public bet reads."""
         return (
-            joinedload(cls.season),
-            joinedload(cls.user),
-            joinedload(cls.winner),
-            joinedload(cls.series).joinedload(Series.player1),
-            joinedload(cls.series).joinedload(Series.player2),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.team1),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.team2),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.season),
-            joinedload(cls.series).joinedload(Series.match).joinedload(Match.fixed_map),
+            joinedload(rel(cls.season)),
+            joinedload(rel(cls.user)),
+            joinedload(rel(cls.winner)),
+            joinedload(rel(cls.series)).joinedload(rel(Series.player1)),
+            joinedload(rel(cls.series)).joinedload(rel(Series.player2)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.team1)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.team2)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.season)),
+            joinedload(rel(cls.series))
+            .joinedload(rel(Series.match))
+            .joinedload(rel(Match.fixed_map)),
         )
 
 

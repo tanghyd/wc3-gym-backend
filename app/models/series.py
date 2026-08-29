@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.base import ExecutableOption
 from sqlmodel import Field, Relationship, SQLModel, col
 
+from app.core.db import rel
 from app.core.ordering import SortOrder, ordered
 from app.models.base import DBModel
 from app.models.match import Match, MatchPublic
@@ -108,12 +109,12 @@ class Series(SeriesBase, DBModel, table=True):
         from sqlalchemy.orm import joinedload
 
         return (
-            joinedload(cls.match).joinedload(Match.team1),
-            joinedload(cls.match).joinedload(Match.team2),
-            joinedload(cls.match).joinedload(Match.season),
-            joinedload(cls.match).joinedload(Match.fixed_map),
-            joinedload(cls.player1),
-            joinedload(cls.player2),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team1)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team2)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.season)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.fixed_map)),
+            joinedload(rel(cls.player1)),
+            joinedload(rel(cls.player2)),
         )
 
     @classmethod
@@ -122,15 +123,15 @@ class Series(SeriesBase, DBModel, table=True):
         from sqlalchemy.orm import joinedload
 
         return (
-            joinedload(cls.match).joinedload(Match.team1),
-            joinedload(cls.match).joinedload(Match.team2),
-            joinedload(cls.match).joinedload(Match.season),
-            joinedload(cls.player1).selectinload(User.w3c_stats),
-            joinedload(cls.player1).selectinload(User.team_seasons),
-            joinedload(cls.player1).selectinload(User.signup_seasons),
-            joinedload(cls.player2).selectinload(User.w3c_stats),
-            joinedload(cls.player2).selectinload(User.team_seasons),
-            joinedload(cls.player2).selectinload(User.signup_seasons),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team1)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team2)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.season)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.w3c_stats)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.team_seasons)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.signup_seasons)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.w3c_stats)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.team_seasons)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.signup_seasons)),
         )
 
 
