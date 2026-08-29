@@ -236,7 +236,6 @@ BOT_WEBHOOK_URL="http://host.docker.internal:3001/webhook/series-updated"
 | `DISCORD_CLIENT_ID` | Discord application id of the OAuth client | `123456789012345678` |
 | `DISCORD_CLIENT_SECRET` | Discord application secret, used for the code exchange | 32-character string |
 | `DISCORD_REDIRECT_URI` | Where Discord sends the browser back; must match the Developer Portal entry | `http://localhost:5001/auth/discord/callback` |
-| `DISCORD_BOT_TOKEN` | Bot token that reads guild membership and roles | 70-character string |
 | `DISCORD_GUILD_ID` | The WC3 Gym Discord server; a login from outside it is refused | `316390574808760322` |
 | `ADMIN_DISCORD_IDS` | Comma-separated Discord ids that always get the admin role | `220202568490418179` |
 

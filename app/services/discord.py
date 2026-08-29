@@ -16,6 +16,9 @@ REQUEST_TIMEOUT = 10
 # The Discord permission bit that makes a role a guild administrator.
 ADMINISTRATOR = 0x8
 
+# The account grants these: who it is, the guilds it is in, and its roles in one.
+SCOPES = "identify guilds guilds.members.read"
+
 
 def authorize_url(state: str) -> str:
     """Where the browser goes to grant us the account's identity."""
@@ -24,7 +27,7 @@ def authorize_url(state: str) -> str:
             "client_id": os.getenv("DISCORD_CLIENT_ID", ""),
             "redirect_uri": os.getenv("DISCORD_REDIRECT_URI", ""),
             "response_type": "code",
-            "scope": "identify",
+            "scope": SCOPES,
             "state": state,
         }
     )
@@ -49,13 +52,17 @@ def exchange_code(code: str) -> str:
     return str(response.json()["access_token"])
 
 
-def identify(access_token: str) -> dict[str, Any]:
-    """The Discord account behind that access token."""
-    response = requests.get(
-        f"{API_URL}/users/@me",
+def _user_get(access_token: str, path: str) -> requests.Response:
+    return requests.get(
+        f"{API_URL}{path}",
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=REQUEST_TIMEOUT,
     )
+
+
+def identify(access_token: str) -> dict[str, Any]:
+    """The Discord account behind that access token."""
+    response = _user_get(access_token, "/users/@me")
     if not response.ok:
         raise ApiError(502, {"error": "Discord refused the login"})
     return dict(response.json())
@@ -69,41 +76,29 @@ def avatar_url(account: dict[str, Any]) -> str | None:
     return f"https://cdn.discordapp.com/avatars/{account['id']}/{avatar}.png"
 
 
-def _bot_get(path: str) -> requests.Response:
-    return requests.get(
-        f"{API_URL}{path}",
-        headers={"Authorization": f"Bot {os.getenv('DISCORD_BOT_TOKEN', '')}"},
-        timeout=REQUEST_TIMEOUT,
-    )
+def role_for(access_token: str, discord_id: str, admin_role: str | None = None) -> str:
+    """The account's role: "admin", "member", or "guest" outside the guild.
 
-
-def role_for(discord_id: str, admin_role: str | None = None) -> str:
-    """The account's role, "admin" or "member"; a non-member is turned away."""
+    Everything is read with the account's own token, so the app needs no bot
+    in the guild.
+    """
     guild_id = os.getenv("DISCORD_GUILD_ID", "")
-    member = _bot_get(f"/guilds/{guild_id}/members/{discord_id}")
-    if member.status_code == 404:
-        raise ApiError(
-            403, {"error": "No valid WC3 Gym server membership found for user"}
-        )
-    if not member.ok:
+    guilds = _user_get(access_token, "/users/@me/guilds")
+    if not guilds.ok:
         raise ApiError(502, {"error": "Discord refused the membership check"})
-    roles = set(member.json().get("roles", []))
+    guild = next((row for row in guilds.json() if str(row.get("id")) == guild_id), None)
+    if guild is None:
+        # A guest logs in and sees the public pages; the routes of a player refuse it.
+        return "guest"
 
     allowlist = os.getenv("ADMIN_DISCORD_IDS", "").replace(" ", "").split(",")
     if discord_id in allowlist:
         return "admin"
-    if admin_role and admin_role in roles:
+    if guild.get("owner") or int(guild.get("permissions", 0)) & ADMINISTRATOR:
         return "admin"
-
-    guild = _bot_get(f"/guilds/{guild_id}")
-    if not guild.ok:
+    if not admin_role:
         return "member"
-    body = guild.json()
-    if str(body.get("owner_id")) == discord_id:
-        return "admin"
-    admin_roles = {
-        role["id"]
-        for role in body.get("roles", [])
-        if int(role.get("permissions", 0)) & ADMINISTRATOR
-    }
-    return "admin" if roles & admin_roles else "member"
+
+    member = _user_get(access_token, f"/users/@me/guilds/{guild_id}/member")
+    roles = set(member.json().get("roles", [])) if member.ok else set()
+    return "admin" if admin_role in roles else "member"

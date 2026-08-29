@@ -44,17 +44,27 @@ def _decode(credentials: _Credentials) -> dict[str, Any]:
         raise ApiError(422, {"error": str(e)}) from e
 
 
-def require_member(credentials: _Credentials) -> dict[str, Any]:
-    """Admit a valid access token and answer its claims."""
+def require_login(credentials: _Credentials) -> dict[str, Any]:
+    """Admit a valid access token and answer its claims, guest included."""
     claims = _decode(credentials)
     if claims.get("type") != "access":
         raise ApiError(422, {"error": "Only non-refresh tokens are allowed"})
     return claims
 
 
+def require_member(credentials: _Credentials) -> dict[str, Any]:
+    """Admit an account that is in the guild; a guest reads nothing of its own."""
+    claims = require_login(credentials)
+    if claims.get("role") == "guest":
+        raise ApiError(
+            403, {"error": "No valid WC3 Gym server membership found for user"}
+        )
+    return claims
+
+
 def require_admin(credentials: _Credentials) -> str:
     """Admit an admin access token and answer its subject."""
-    claims = require_member(credentials)
+    claims = require_login(credentials)
     if claims.get("role") != "admin" and claims["sub"] != "admin":
         raise ApiError(403, {"error": "Admins only"})
     return claims["sub"]
@@ -68,6 +78,7 @@ def require_refresh(credentials: _Credentials) -> dict[str, Any]:
     return claims
 
 
+RequireLogin = Annotated[dict[str, Any], Depends(require_login)]
 RequireMember = Annotated[dict[str, Any], Depends(require_member)]
 RequireRefresh = Annotated[dict[str, Any], Depends(require_refresh)]
 

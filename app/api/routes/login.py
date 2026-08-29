@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 
 from app.api.deps import (
-    RequireMember,
+    RequireLogin,
     RequireRefresh,
     SettingsServiceDep,
     UserServiceDep,
@@ -64,11 +64,12 @@ def discord_callback(
     if claims.get("type") != "state":
         raise ApiError(400, {"error": "Bad login state"})
 
-    account = discord.identify(discord.exchange_code(code))
+    access_token = discord.exchange_code(code)
+    account = discord.identify(access_token)
     admin_role = settings_service.get_settings_dict().get("admin_role")
     identity = str(account["id"])
     extra = {
-        "role": discord.role_for(identity, admin_role),
+        "role": discord.role_for(access_token, identity, admin_role),
         "name": account.get("global_name") or account.get("username"),
         "avatar": discord.avatar_url(account),
     }
@@ -87,7 +88,7 @@ def discord_callback(
 
 
 @router.get("/me")
-def me(claims: RequireMember, user_service: UserServiceDep) -> dict[str, Any]:
+def me(claims: RequireLogin, user_service: UserServiceDep) -> dict[str, Any]:
     """The logged-in account and the users row linked to its Discord id."""
     users = user_service.find_by_discord_id(claims["sub"])
     return {
@@ -100,22 +101,13 @@ def me(claims: RequireMember, user_service: UserServiceDep) -> dict[str, Any]:
 
 
 @router.post("/refresh")
-def refresh(
-    claims: RequireRefresh, settings_service: SettingsServiceDep
-) -> dict[str, Any]:
+def refresh(claims: RequireRefresh) -> dict[str, Any]:
     """Exchange a refresh token for a new access token."""
-    token_time = int(os.getenv("TOKEN_TIME", "60"))
-    identity = claims["sub"]
-    role = claims.get("role", "admin")
-    if identity.isdigit():
-        # A Discord subject: the roles may have changed since the login.
-        role = discord.role_for(
-            identity, settings_service.get_settings_dict().get("admin_role")
-        )
+    # The claims are re-minted as they stand; a role change lands at the next login.
     new_access_token = create_access_token(
-        identity,
-        token_time,
-        role=role,
+        claims["sub"],
+        int(os.getenv("TOKEN_TIME", "60")),
+        role=claims.get("role", "admin"),
         name=claims.get("name"),
         avatar=claims.get("avatar"),
     )
