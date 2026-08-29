@@ -10,6 +10,7 @@ from app.models.season import SeasonCreate, SeasonPublic, SeasonUpdate
 from app.models.user import UserListPublic
 from app.models.w3c_ladder_match import LadderSyncResult, SeasonLadder
 from app.models.w3c_stats import W3CSyncResult
+from app.services.users import W3C_SYNC_WORKERS
 
 logger = logging.getLogger(__name__)
 
@@ -150,11 +151,13 @@ def sync_ladder_season_signups(
     season_id: int,
     service: LadderServiceDep,
     offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=25)] = 10,
+    # one chunk = one worker wave
+    limit: Annotated[int, Query(ge=1, le=25)] = W3C_SYNC_WORKERS,
 ) -> LadderSyncResult:
     """Store the ladder matches of one chunk of the season's players.
 
-    The client calls again with next_offset until it answers null.
+    The client calls again with next_offset until it answers null. A player
+    synced in the last SYNC_MAX_AGE is skipped.
     """
     return service.sync_season(season_id, offset=offset, limit=limit)
 

@@ -55,7 +55,7 @@ from app.models.w3c_ladder_match import (
     W3CLadderMatchCreate,
 )
 from app.models.w3c_stats import W3CSyncFailure, W3CSyncResult
-from app.services.users import W3C_SYNC_WORKERS
+from app.services.users import SYNC_MAX_AGE, W3C_SYNC_WORKERS
 from app.services.w3c import THROTTLED_MESSAGE, W3CService
 
 if TYPE_CHECKING:
@@ -191,12 +191,17 @@ class LadderService:
             return answer
 
     def sync_season(
-        self, season_id: int, offset: int = 0, limit: int = 10
+        self,
+        season_id: int,
+        offset: int = 0,
+        limit: int = W3C_SYNC_WORKERS,
+        max_age: timedelta = SYNC_MAX_AGE,
     ) -> LadderSyncResult:
         """Sync one chunk of the players on a team of the season.
 
         The window starts at the season start date, so a chunk backfills as
-        well as it refreshes.
+        well as it refreshes. A player synced more recently than max_age is
+        skipped untouched; a max_age of zero syncs everyone.
         """
         with Session.begin() as session:
             season = session.get(Season, season_id)
@@ -214,20 +219,36 @@ class LadderService:
             roster = [r for r in _roster(session, season_id) if r.team_id is not None]
             total = len(roster)
             rows = roster[offset : offset + limit]
+            fresh_since = _now() - max_age
+            synced_at = dict(
+                session.execute(
+                    select(User.id, User.ladder_synced_at).where(
+                        User.id.in_([row.user_id for row in rows])
+                    )
+                ).all()
+            )
 
-        if seasons and open_window:
+        users: list[UserReduced] = []
+        skipped: list[int] = []
+        for row in rows:
+            stamp = synced_at.get(row.user_id)
+            if stamp is not None and stamp > fresh_since:
+                skipped.append(row.user_id)
+            else:
+                users.append(
+                    UserReduced(id=row.user_id, name=row.name, battleTag=row.battleTag)
+                )
+
+        if users and seasons and open_window:
             # w3champions can have opened a season no stored match names yet
             open_season = W3CService(
                 settings_app_service=self.settings_app_service
             ).current_season()
             seasons = sorted({*seasons, open_season}, reverse=True)
 
-        users = [
-            UserReduced(id=row.user_id, name=row.name, battleTag=row.battleTag)
-            for row in rows
-        ]
         result = self.sync_users(users, since, seasons, walk_from)
-        done = offset + len(users)
+        result.skipped = skipped
+        done = offset + len(rows)
         next_offset = done if done < total else None
         return LadderSyncResult(
             **result.model_dump(), total=total, next_offset=next_offset

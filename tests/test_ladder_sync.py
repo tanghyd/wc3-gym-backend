@@ -5,8 +5,9 @@ written by capture.py), so the shape under test is the shape the service
 answers with.
 """
 
+import inspect
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
+from app.api.routes.seasons import sync_ladder_season_signups
 from app.core.db import Session
 from app.core.exceptions import W3CThrottledError
 from app.models.enums import Race
@@ -28,7 +30,7 @@ from app.models.user_team_season import DBUserTeamSeason
 from app.models.w3c_ladder_match import W3CLadderMatch, W3CLadderMatchCreate
 from app.services import w3c as w3c_module
 from app.services.ladder import LadderService
-from app.services.users import UserService
+from app.services.users import W3C_SYNC_WORKERS, UserService
 from app.services.w3c import THROTTLED_MESSAGE, W3CService
 
 FIXTURES = Path(__file__).parent / "data" / "w3c"
@@ -681,6 +683,47 @@ def test_the_season_sync_counts_the_players_on_a_team(
     assert result.total == len(seeded["player_ids"])
     assert result.synced == seeded["player_ids"]
     assert bench.id not in result.synced
+
+
+def test_a_player_synced_a_moment_ago_is_skipped(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second press of the button costs no w3champions call."""
+    for player in seeded["player_ids"]:
+        sign_up(seeded["season_id"], player)
+    fake = serve(monkeypatch, {})
+
+    first = LadderService().sync_season(seeded["season_id"])
+    fake.calls.clear()
+    second = LadderService().sync_season(seeded["season_id"])
+
+    assert first.synced == seeded["player_ids"]
+    assert second.skipped == seeded["player_ids"]
+    assert second.synced == []
+    assert fake.calls == []
+
+
+def test_a_player_is_synced_again_once_max_age_has_passed(
+    app: FastAPI, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for player in seeded["player_ids"]:
+        sign_up(seeded["season_id"], player)
+    serve(monkeypatch, {})
+
+    LadderService().sync_season(seeded["season_id"])
+    result = LadderService().sync_season(
+        seeded["season_id"], max_age=timedelta(seconds=0)
+    )
+
+    assert result.skipped == []
+    assert result.synced == seeded["player_ids"]
+
+
+def test_the_ladder_sync_route_syncs_one_worker_wave() -> None:
+    """One chunk is one wave of workers, so the default limit is that many."""
+    limit = inspect.signature(sync_ladder_season_signups).parameters["limit"]
+
+    assert limit.default == W3C_SYNC_WORKERS
 
 
 def test_the_ladder_sync_route_answers_404_for_an_unknown_season(
