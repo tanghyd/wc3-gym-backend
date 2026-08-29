@@ -22,7 +22,7 @@ def create_access_token(identity: str, minutes: int) -> str:
             "nbf": now,
             "exp": now + timedelta(minutes=minutes),
         },
-        os.getenv("JWT_SECRET_KEY"),
+        os.environ["JWT_SECRET_KEY"],
         algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
     )
 
@@ -31,7 +31,7 @@ def decode_token(token: str) -> dict[str, Any]:
     """Validate signature and expiry; raises jwt.InvalidTokenError."""
     return jwt.decode(
         token,
-        os.getenv("JWT_SECRET_KEY"),
+        os.environ["JWT_SECRET_KEY"],
         algorithms=[os.getenv("JWT_ALGORITHM", "HS256")],
         # A token minted this second must not read as from the future
         leeway=5,
