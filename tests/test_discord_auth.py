@@ -1,17 +1,22 @@
-"""The Discord login: state, membership, roles and /me.
+"""The Clerk login: the Discord identity it resolves, and the role that follows.
 
-Discord itself is stood in for: the code exchange and the account's own
-reads in app/services/discord.py are patched per test.
+Clerk and Discord are stood in for: the session check, the account's Discord
+OAuth token and the reads that token makes are patched per test.
 """
 
-import urllib.parse
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from clerk_backend_api import Clerk
+from clerk_backend_api.security.types import AuthStatus, RequestState
+from clerk_backend_api.users import Users
 from httpx2 import Client
+from starlette.requests import Request
 
-from app.core.security import decode_token
 from app.services import discord
+
+CLERK_USER_ID = "user_2abcdefghijklmnop"
 
 ACCOUNT = {"id": "42", "username": "player", "global_name": "Player", "avatar": "abc"}
 
@@ -19,6 +24,8 @@ GUILD_ID = "316390574808760322"
 
 # The guild as /users/@me/guilds lists it for a plain member.
 GUILD = {"id": GUILD_ID, "name": "WC3 Gym", "owner": False, "permissions": "0"}
+
+SESSION = {"Authorization": "Bearer a-clerk-session-token"}
 
 
 # The account reads answer with one object or a list of them.
@@ -35,120 +42,77 @@ class FakeResponse:
         return self.body
 
 
-def stub_discord(
+def stub_clerk(
     monkeypatch: pytest.MonkeyPatch,
+    signed_in: bool = True,
+    linked: bool = True,
     a_member: bool = True,
     member_roles: list[str] | None = None,
     guild: dict[str, Any] | None = None,
     account: dict[str, Any] | None = None,
 ) -> None:
-    """Answer the two calls the account's own token makes."""
+    """Answer the Clerk session check and the two calls the account's token makes."""
     guilds = [{"id": "1", "owner": True, "permissions": "8"}]
     if a_member:
         guilds.append({**GUILD, **(guild or {})})
+    who = account or ACCOUNT
+
+    def authenticate_request(
+        self: Clerk, request: object, options: object
+    ) -> RequestState:
+        if not signed_in:
+            return RequestState(status=AuthStatus.SIGNED_OUT)
+        return RequestState(
+            status=AuthStatus.SIGNED_IN, payload={"sub": CLERK_USER_ID, "sid": "sess_1"}
+        )
+
+    def oauth_token(self: Users, **kwargs: str) -> list[SimpleNamespace]:
+        assert kwargs == {"user_id": CLERK_USER_ID, "provider": "oauth_discord"}
+        if not linked:
+            return []
+        return [SimpleNamespace(token="discord-token", provider_user_id=who["id"])]
 
     def user_get(access_token: str, path: str) -> FakeResponse:
+        if path == "/users/@me":
+            return FakeResponse(200, who)
         if path == "/users/@me/guilds":
             return FakeResponse(200, guilds)
         return FakeResponse(200, {"roles": member_roles or []})
 
     monkeypatch.setenv("DISCORD_GUILD_ID", GUILD_ID)
     monkeypatch.setenv("ADMIN_DISCORD_IDS", "220202568490418179")
-    monkeypatch.setenv("FRONTEND_URL", "http://localhost:5003")
-    monkeypatch.setattr(discord, "exchange_code", lambda code: "discord-token")
-    monkeypatch.setattr(discord, "identify", lambda token: account or ACCOUNT)
+    monkeypatch.setattr(Clerk, "authenticate_request", authenticate_request)
+    monkeypatch.setattr(Users, "get_o_auth_access_token", oauth_token)
     monkeypatch.setattr(discord, "_user_get", user_get)
 
 
-def start_state(client: Client) -> str:
-    """The state the start route signed."""
-    resp = client.get("/auth/discord/start")
-    assert resp.status_code == 302
-    query = urllib.parse.urlparse(resp.headers["location"]).query
-    return urllib.parse.parse_qs(query)["state"][0]
+def test_a_request_without_a_bearer_is_refused(client: Client) -> None:
+    resp = client.get("/me")
+    assert resp.status_code == 401
+    assert resp.json() == {"error": "Missing Authorization Header"}
 
 
-def log_in(client: Client) -> dict[str, str]:
-    """The tokens the callback hands to the frontend."""
-    resp = client.get(
-        "/auth/discord/callback",
-        params={"code": "the-code", "state": start_state(client)},
-    )
-    assert resp.status_code == 302, resp.json()
-    fragment = urllib.parse.urlparse(resp.headers["location"]).fragment
-    return {
-        key: value[0]
-        for key, value in urllib.parse.parse_qs(fragment.split("?", 1)[1]).items()
-    }
-
-
-def headers(tokens: dict[str, str]) -> dict[str, str]:
-    return {"Authorization": f"Bearer {tokens['access_token']}"}
-
-
-def test_start_redirects_to_discord_with_a_signed_state(client: Client) -> None:
-    resp = client.get("/auth/discord/start")
-    assert resp.status_code == 302
-    location = resp.headers["location"]
-    assert location.startswith("https://discord.com/api/v10/oauth2/authorize?")
-    assert "scope=identify+guilds+guilds.members.read" in location
-    claims = decode_token(urllib.parse.parse_qs(location.split("?")[1])["state"][0])
-    assert claims["type"] == "state"
-
-
-def test_a_state_token_is_no_access_token(client: Client) -> None:
-    state = start_state(client)
-    resp = client.get("/me", headers={"Authorization": f"Bearer {state}"})
-    assert resp.status_code == 422
-
-
-def test_callback_with_a_forged_state(
+def test_a_bearer_no_clerk_session_backs_is_refused(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub_discord(monkeypatch)
-    resp = client.get("/auth/discord/callback", params={"code": "c", "state": "forged"})
-    assert resp.status_code == 400
-    assert resp.json() == {"error": "Bad login state"}
+    stub_clerk(monkeypatch, signed_in=False)
+    resp = client.get("/me", headers=SESSION)
+    assert resp.status_code == 401
+    assert "error" in resp.json()
 
 
-def test_an_account_outside_the_guild_logs_in_as_a_guest(
+def test_a_login_with_no_discord_account_is_refused(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A guest reads the public pages; the login itself is not refused."""
-    stub_discord(monkeypatch, a_member=False)
-    resp = client.get("/me", headers=headers(log_in(client)))
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "guest"
+    stub_clerk(monkeypatch, linked=False)
+    resp = client.get("/me", headers=SESSION)
+    assert resp.status_code == 401
+    assert resp.json() == {"error": "No Discord account on this login"}
 
 
-def test_a_guest_passes_no_player_route(
-    client: Client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """require_member guards the routes that read a player's own data."""
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    from app.api.deps import require_member
-    from app.core.exceptions import ApiError
-
-    stub_discord(monkeypatch, a_member=False)
-    token = log_in(client)["access_token"]
-
-    with pytest.raises(ApiError) as refused:
-        require_member(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
-
-    assert refused.value.status_code == 403
-    assert refused.value.body == {
-        "error": "No valid WC3 Gym server membership found for user"
-    }
-
-
-def test_a_member_logs_in_and_reads_me(
-    client: Client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stub_discord(monkeypatch)
-    tokens = log_in(client)
-    assert decode_token(tokens["refresh_token"])["type"] == "refresh"
-    resp = client.get("/me", headers=headers(tokens))
+def test_a_member_reads_me(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_clerk(monkeypatch)
+    resp = client.get("/me", headers=SESSION)
     assert resp.status_code == 200
     assert resp.json() == {
         "discord_id": "42",
@@ -162,33 +126,65 @@ def test_a_member_logs_in_and_reads_me(
 def test_me_carries_the_linked_user(
     client: Client, monkeypatch: pytest.MonkeyPatch, seeded: dict[str, Any]
 ) -> None:
-    stub_discord(monkeypatch, account={**ACCOUNT, "id": "1"})
-    resp = client.get("/me", headers=headers(log_in(client)))
+    stub_clerk(monkeypatch, account={**ACCOUNT, "id": "1"})
+    resp = client.get("/me", headers=SESSION)
     assert resp.status_code == 200
     assert resp.json()["user"]["battleTag"] == "P1#1111"
+
+
+def test_an_account_outside_the_guild_logs_in_as_a_guest(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guest reads the public pages; the login itself is not refused."""
+    stub_clerk(monkeypatch, a_member=False)
+    resp = client.get("/me", headers=SESSION)
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "guest"
+
+
+def test_a_guest_passes_no_player_route(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """require_member guards the routes that read a player's own data."""
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from app.api.deps import require_member
+    from app.core.exceptions import ApiError
+
+    stub_clerk(monkeypatch, a_member=False)
+    request = Request({"type": "http", "headers": []})
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="a-token")
+
+    with pytest.raises(ApiError) as refused:
+        require_member(request, credentials)
+
+    assert refused.value.status_code == 403
+    assert refused.value.body == {
+        "error": "No valid WC3 Gym server membership found for user"
+    }
 
 
 def test_the_allowlist_makes_an_admin(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub_discord(monkeypatch, account={**ACCOUNT, "id": "220202568490418179"})
-    resp = client.get("/me", headers=headers(log_in(client)))
+    stub_clerk(monkeypatch, account={**ACCOUNT, "id": "220202568490418179"})
+    resp = client.get("/me", headers=SESSION)
     assert resp.json()["role"] == "admin"
 
 
 def test_the_guild_owner_is_an_admin(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub_discord(monkeypatch, guild={"owner": True})
-    resp = client.get("/me", headers=headers(log_in(client)))
+    stub_clerk(monkeypatch, guild={"owner": True})
+    resp = client.get("/me", headers=SESSION)
     assert resp.json()["role"] == "admin"
 
 
 def test_an_administrator_role_makes_an_admin(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub_discord(monkeypatch, guild={"permissions": "8"})
-    resp = client.get("/me", headers=headers(log_in(client)))
+    stub_clerk(monkeypatch, guild={"permissions": "8"})
+    resp = client.get("/me", headers=SESSION)
     assert resp.json()["role"] == "admin"
 
 
@@ -201,38 +197,26 @@ def test_the_admin_role_setting_makes_an_admin(
         headers=auth_headers,
     )
     assert resp.status_code == 200, resp.json()
-    stub_discord(monkeypatch, member_roles=["gym-admins"])
-    resp = client.get("/me", headers=headers(log_in(client)))
+    stub_clerk(monkeypatch, member_roles=["gym-admins"])
+    resp = client.get("/me", headers=SESSION)
     assert resp.json()["role"] == "admin"
 
 
-def test_refresh_keeps_the_member_role(
+def test_a_member_session_is_no_admin_token(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub_discord(monkeypatch)
-    tokens = log_in(client)
-    resp = client.post(
-        "/refresh", headers={"Authorization": f"Bearer {tokens['refresh_token']}"}
-    )
-    assert resp.status_code == 200
-    claims = decode_token(resp.json()["access_token"])
-    assert claims["role"] == "member"
-    assert claims["name"] == "Player"
-
-
-def test_a_member_token_is_no_admin_token(
-    client: Client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stub_discord(monkeypatch)
-    resp = client.get("/config/koth/nightbot-token", headers=headers(log_in(client)))
+    stub_clerk(monkeypatch)
+    resp = client.get("/config/koth/nightbot-token", headers=SESSION)
     assert resp.status_code == 403
     assert resp.json() == {"error": "Admins only"}
 
 
 def test_the_admin_token_login_still_admits(
-    client: Client, auth_headers: dict[str, str]
+    client: Client, seeded: dict[str, Any], auth_headers: dict[str, str]
 ) -> None:
-    assert decode_token(auth_headers["Authorization"].split()[1])["role"] == "admin"
+    """The admin token reaches an admin route without touching Clerk."""
+    resp = client.get("/config/koth/nightbot-token", headers=auth_headers)
+    assert resp.status_code == 200
     resp = client.get("/me", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["role"] == "admin"

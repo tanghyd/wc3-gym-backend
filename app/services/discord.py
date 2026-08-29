@@ -1,7 +1,10 @@
-"""The Discord OAuth calls and the role a logged-in account gets."""
+"""The Discord calls and the role a logged-in account gets.
+
+The account's Discord token comes from Clerk, so the Clerk Discord
+connection must request the `identify guilds guilds.members.read` scopes.
+"""
 
 import os
-import urllib.parse
 from typing import Any
 
 import requests
@@ -15,41 +18,6 @@ REQUEST_TIMEOUT = 10
 
 # The Discord permission bit that makes a role a guild administrator.
 ADMINISTRATOR = 0x8
-
-# The account grants these: who it is, the guilds it is in, and its roles in one.
-SCOPES = "identify guilds guilds.members.read"
-
-
-def authorize_url(state: str) -> str:
-    """Where the browser goes to grant us the account's identity."""
-    query = urllib.parse.urlencode(
-        {
-            "client_id": os.getenv("DISCORD_CLIENT_ID", ""),
-            "redirect_uri": os.getenv("DISCORD_REDIRECT_URI", ""),
-            "response_type": "code",
-            "scope": SCOPES,
-            "state": state,
-        }
-    )
-    return f"{API_URL}/oauth2/authorize?{query}"
-
-
-def exchange_code(code: str) -> str:
-    """The account's Discord access token, from the authorization code."""
-    response = requests.post(
-        f"{API_URL}/oauth2/token",
-        data={
-            "client_id": os.getenv("DISCORD_CLIENT_ID", ""),
-            "client_secret": os.getenv("DISCORD_CLIENT_SECRET", ""),
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": os.getenv("DISCORD_REDIRECT_URI", ""),
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
-    if not response.ok:
-        raise ApiError(502, {"error": "Discord refused the login"})
-    return str(response.json()["access_token"])
 
 
 def _user_get(access_token: str, path: str) -> requests.Response:

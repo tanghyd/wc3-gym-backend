@@ -1,24 +1,12 @@
 import os
-import urllib.parse
 from typing import Any
 
-import jwt
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 
-from app.api.deps import (
-    RequireLogin,
-    RequireRefresh,
-    SettingsServiceDep,
-    UserServiceDep,
-)
+from app.api.deps import RequireLogin, UserServiceDep
 from app.core.exceptions import ApiError
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    create_state_token,
-    decode_token,
-)
+from app.core.security import create_access_token
 from app.models.login import LoginRequest
 from app.services import discord
 
@@ -33,82 +21,24 @@ def index() -> RedirectResponse:
 
 @router.post("/login")
 def login(data: LoginRequest) -> dict[str, str]:
-    """Exchange the admin token for an access token and a refresh token."""
-    token_time = int(os.getenv("TOKEN_TIME", "60"))
-    refresh_token_time = int(os.getenv("REFRESH_TOKEN_TIME", "300"))
+    """Exchange the admin token for an access token."""
     if data.token != os.getenv("ADMIN_TOKEN"):
         raise ApiError(401, {"error": "Bad admin token"})
     return {
-        "access_token": create_access_token("admin", token_time),
-        "refresh_token": create_refresh_token("admin", refresh_token_time),
+        "access_token": create_access_token("admin", int(os.getenv("TOKEN_TIME", "60")))
     }
-
-
-@router.get("/auth/discord/start")
-def discord_start() -> RedirectResponse:
-    """Send the browser to Discord, carrying a state we can verify."""
-    return RedirectResponse(
-        discord.authorize_url(create_state_token()), status_code=302
-    )
-
-
-@router.get("/auth/discord/callback")
-def discord_callback(
-    code: str, state: str, settings_service: SettingsServiceDep
-) -> RedirectResponse:
-    """Turn the Discord code into our tokens and hand them to the frontend."""
-    try:
-        claims = decode_token(state)
-    except jwt.InvalidTokenError as e:
-        raise ApiError(400, {"error": "Bad login state"}) from e
-    if claims.get("type") != "state":
-        raise ApiError(400, {"error": "Bad login state"})
-
-    access_token = discord.exchange_code(code)
-    account = discord.identify(access_token)
-    admin_role = settings_service.get_settings_dict().get("admin_role")
-    identity = str(account["id"])
-    extra = {
-        "role": discord.role_for(access_token, identity, admin_role),
-        "name": account.get("global_name") or account.get("username"),
-        "avatar": discord.avatar_url(account),
-    }
-    tokens = urllib.parse.urlencode(
-        {
-            "access_token": create_access_token(
-                identity, int(os.getenv("TOKEN_TIME", "60")), **extra
-            ),
-            "refresh_token": create_refresh_token(
-                identity, int(os.getenv("REFRESH_TOKEN_TIME", "300")), **extra
-            ),
-        }
-    )
-    frontend_url = os.getenv("FRONTEND_URL", "")
-    return RedirectResponse(f"{frontend_url}#/auth?{tokens}", status_code=302)
 
 
 @router.get("/me")
 def me(claims: RequireLogin, user_service: UserServiceDep) -> dict[str, Any]:
     """The logged-in account and the users row linked to its Discord id."""
+    # The admin token carries no Discord account, so it reads no name.
+    account = discord.identify(claims["token"]) if "token" in claims else {}
     users = user_service.find_by_discord_id(claims["sub"])
     return {
         "discord_id": claims["sub"],
-        "name": claims.get("name"),
-        "avatar": claims.get("avatar"),
+        "name": account.get("global_name") or account.get("username"),
+        "avatar": discord.avatar_url(account),
         "role": claims.get("role", "admin"),
         "user": users[0] if users else None,
     }
-
-
-@router.post("/refresh")
-def refresh(claims: RequireRefresh) -> dict[str, Any]:
-    """Exchange a refresh token for a new access token."""
-    # The claims are re-minted as they stand; a role change lands at the next login.
-    new_access_token = create_access_token(
-        claims["sub"],
-        int(os.getenv("TOKEN_TIME", "60")),
-        role=claims.get("role", "admin"),
-        name=claims.get("name"),
-        avatar=claims.get("avatar"),
-    )
-    return {"access_token": new_access_token}
