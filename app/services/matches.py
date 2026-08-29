@@ -16,20 +16,20 @@ logger = logging.getLogger(__name__)
 class MatchService:
     def add(self, match: MatchCreate) -> MatchPublic:
         with Session.begin() as session:
-            match = Match.add(session, match.model_dump())
-            public = MatchPublic.from_match(match)
+            row = Match.add(session, match.model_dump())
+            public = MatchPublic.from_match(row)
             derived.fill_matches(session, [public])
             return public
 
     def update(self, match_id: int, match: MatchUpdate) -> MatchPublic:
         with Session.begin() as session:
-            match = Match.update(
+            row = Match.update(
                 session, match_id, **match.model_dump(exclude_unset=True)
             )
-            if not match:
+            if not row:
                 logger.error("Match could not be updated!")
                 raise NotFoundError("Match not found")
-            public = MatchPublic.from_match(match)
+            public = MatchPublic.from_match(row)
             derived.fill_matches(session, [public])
             return public
 
@@ -68,6 +68,8 @@ class MatchService:
         with Session.begin() as session:
             result: list[MatchPublic] = []
             filter = QueryUtil.convert_query_to_db_filter(Match, query)
+            if filter is None:
+                return []
             # Eager load only what we need, explicitly disable other relationships
             statement = (
                 select(Match)

@@ -96,14 +96,14 @@ class FantasyBetService:
         self, fantasy_bet_id: int, fantasy_bet: FantasyBetUpdate
     ) -> FantasyBetPublic:
         with Session.begin() as session:
-            fantasy_bet = FantasyBet.update(
+            row = FantasyBet.update(
                 session,
                 fantasy_bet_id,
                 **fantasy_bet.model_dump(exclude_unset=True),
             )
-            if not fantasy_bet:
+            if not row:
                 raise NotFoundError("Fantasy Bet not found")
-            public = FantasyBetPublic.from_fantasy_bet(fantasy_bet)
+            public = FantasyBetPublic.from_fantasy_bet(row)
             derived.fill_series(session, [public.series])
             derived.fill_bet_results([public])
             return public

@@ -2,11 +2,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Self
 
 from sqlalchemy import TIMESTAMP
-from sqlalchemy.sql.base import ExecutableOption
+from sqlalchemy.orm.interfaces import ORMOption
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.core.db import rel
-from app.models.base import DBModel
+from app.models.base import DBModel, ident
 from app.models.match import MatchPublic
 from app.models.types import IsoDateTime, NumToStr
 from app.models.user import UserPublic
@@ -45,7 +45,7 @@ class DraftSeries(DraftSeriesBase, DBModel, table=True):
     )
 
     @classmethod
-    def _eager_options(cls) -> tuple[ExecutableOption, ...]:
+    def _eager_options(cls) -> tuple[ORMOption, ...]:
         """The rows a match draft reads off every draft series."""
         from sqlalchemy.orm import joinedload
 
@@ -96,7 +96,7 @@ class DraftSeriesPublic(DraftSeriesBase):
     @classmethod
     def from_draft_series(cls, draft_series: DraftSeries) -> Self:
         return cls(
-            id=draft_series.id,
+            id=ident(draft_series),
             match_id=draft_series.match_id,
             match=MatchPublic.from_match(draft_series.match)
             if draft_series.match

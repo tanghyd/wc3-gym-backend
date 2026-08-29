@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 class FantasyTeamService:
     def add(self, fantasy_team: FantasyTeamCreate) -> FantasyTeamPublic:
         with Session.begin() as session:
-            fantasy_team = FantasyTeam.add(session, fantasy_team.model_dump())
-            public = FantasyTeamPublic.from_fantasy_team(fantasy_team)
+            row = FantasyTeam.add(session, fantasy_team.model_dump())
+            public = FantasyTeamPublic.from_fantasy_team(row)
             derived.fill_fantasy_teams(session, [public])
             return public
 
@@ -33,14 +33,14 @@ class FantasyTeamService:
         self, fantasy_team_id: int, fantasy_team: FantasyTeamUpdate
     ) -> FantasyTeamPublic:
         with Session.begin() as session:
-            fantasy_team = FantasyTeam.update(
+            row = FantasyTeam.update(
                 session,
                 fantasy_team_id,
                 **fantasy_team.model_dump(exclude_unset=True),
             )
-            if not fantasy_team:
+            if not row:
                 raise NotFoundError("Fantasy Team not found")
-            public = FantasyTeamPublic.from_fantasy_team(fantasy_team)
+            public = FantasyTeamPublic.from_fantasy_team(row)
             derived.fill_fantasy_teams(session, [public])
             return public
 

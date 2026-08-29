@@ -35,12 +35,12 @@ class SeasonService:
 
     def update(self, season_id: int, season: SeasonUpdate) -> SeasonPublic:
         with Session.begin() as session:
-            season = Season.update(
+            row = Season.update(
                 session, season_id, **season.model_dump(exclude_unset=True)
             )
-            if not season:
+            if not row:
                 raise NotFoundError("Season not found")
-            return SeasonPublic.from_season(season)
+            return SeasonPublic.from_season(row)
 
     def delete(self, season_id: int) -> None:
         with Session.begin() as session:
@@ -122,6 +122,8 @@ class SeasonService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[SeasonPublic]:
+        if filter is None:
+            return []
         with Session.begin() as session:
             result = []
             # Eager load related entities, disable nested loading except for maps

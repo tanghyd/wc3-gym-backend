@@ -85,10 +85,10 @@ class TeamService:
 
     def update(self, team_id: int, team: TeamUpdate) -> TeamPublic:
         with Session.begin() as session:
-            team = Team.update(session, team_id, **team.model_dump(exclude_unset=True))
-            if not team:
+            row = Team.update(session, team_id, **team.model_dump(exclude_unset=True))
+            if not row:
                 raise NotFoundError("Team not found")
-            return _public(session, team)
+            return _public(session, row)
 
     def update_icon(self, team_id: int, file: bytes) -> TeamPublic:
         with Session.begin() as session:
@@ -260,6 +260,8 @@ class TeamService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[TeamPublic]:
+        if filter is None:
+            return []
         with Session.begin() as session:
             result: list[TeamPublic] = []
             # Eager load related entities, disable nested loading
