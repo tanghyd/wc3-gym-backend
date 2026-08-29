@@ -336,7 +336,10 @@ async def update_player_series(
     else:
         data = await request.json() or {}
 
-    entry = _identity(request, credentials, data.get("token"), "dashboard")
+    token = data.get("token")
+    entry = _identity(
+        request, credentials, token if isinstance(token, str) else None, "dashboard"
+    )
 
     # Only the parsing and the identity check above need the event loop
     return await run_in_threadpool(
