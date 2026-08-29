@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ColumnElement, Select, func, or_, select, update
@@ -12,6 +12,7 @@ from app.core.db import Session
 from app.core.exceptions import NotFoundError, W3CThrottledError
 from app.core.query import QueryElement, QueryUtil
 from app.models.relationships import DBUserSeasonSignup
+from app.models.types import utcnow
 from app.models.user import (
     User,
     UserCreate,
@@ -39,11 +40,6 @@ W3C_SYNC_WORKERS = 4
 # A button absorbs a double click and a second admin, and still refreshes
 # a roster before its match.
 SYNC_MAX_AGE = timedelta(minutes=10)
-
-
-def _now() -> datetime:
-    """UTC without a zone, the shape the DATETIME columns hold."""
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _public(session: OrmSession, user: User) -> UserPublic:
@@ -230,7 +226,7 @@ class UserService:
                 self._write_w3c_stats(session, user.id, s)
             # The stamp says when the app last asked, not that stats were found
             session.execute(
-                update(User).where(User.id == user.id).values(w3c_synced_at=_now())
+                update(User).where(User.id == user.id).values(w3c_synced_at=utcnow())
             )
 
     def _write_w3c_stats(

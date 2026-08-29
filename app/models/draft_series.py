@@ -7,7 +7,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import DBModel
 from app.models.match import MatchPublic
-from app.models.types import IsoDateTime, NumToStr
+from app.models.types import IsoDateTime, NaiveUTC, NumToStr
 from app.models.user import UserPublic
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 class DraftSeriesBase(SQLModel):
     match_id: int = Field(index=True, foreign_key="matches.id")
-    date_time: datetime | None = None
+    date_time: Annotated[datetime | None, NaiveUTC] = None
     caster: Annotated[str | None, NumToStr] = Field(default=None, max_length=50)
     player1_id: int = Field(index=True, foreign_key="users.id")
     player2_id: int = Field(index=True, foreign_key="users.id")
@@ -70,7 +70,7 @@ class DraftSeriesCreate(DraftSeriesBase):
 
 class DraftSeriesUpdate(SQLModel):
     match_id: int | None = None
-    date_time: datetime | None = None
+    date_time: Annotated[datetime | None, NaiveUTC] = None
     caster: Annotated[str | None, NumToStr] = None
     player1_id: int | None = None
     player2_id: int | None = None

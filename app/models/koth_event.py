@@ -6,13 +6,13 @@ from sqlmodel import Field, Relationship, SQLModel
 from app.models.base import DBModel
 from app.models.koth_match import KothMatch, KothMatchPublic
 from app.models.koth_signup import KothSignup, KothSignupPublic
-from app.models.types import IsoDateTime, NoneToList
+from app.models.types import IsoDateTime, NaiveUTC, NoneToList, utcnow
 
 
 class KothEventBase(SQLModel):
     name: str = Field(max_length=100)
     description: str | None = Field(default=None, max_length=500)
-    event_date: datetime = Field(default_factory=datetime.utcnow)
+    event_date: Annotated[datetime, NaiveUTC] = Field(default_factory=utcnow)
     is_active: bool = True
     bracket_1_threshold: int = 1450  # < this value
     bracket_2_threshold: int = 1600  # >= bracket_1 and < this value
@@ -42,7 +42,7 @@ class KothEventCreate(KothEventBase):
 class KothEventUpdate(SQLModel):
     name: str | None = None
     description: str | None = None
-    event_date: datetime | None = None
+    event_date: Annotated[datetime | None, NaiveUTC] = None
     is_active: bool | None = None
     bracket_1_threshold: int | None = None
     bracket_2_threshold: int | None = None

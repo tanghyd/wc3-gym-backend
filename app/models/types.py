@@ -13,7 +13,7 @@ Each type says which group it is in.
 import difflib
 import enum
 import numbers
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from pydantic import BeforeValidator, PlainSerializer
@@ -57,6 +57,23 @@ def _lenient_date[T](value: T) -> date | None | T:
         except ValueError:
             return value
         return parsed.date()
+    return value
+
+
+def utcnow() -> datetime:
+    """UTC without a zone, the shape every DATETIME column holds."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _naive_utc[T](value: T) -> datetime | T:
+    # A zoned value is converted; a bare one is taken as UTC already.
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)  # type: ignore[assignment]
+        except ValueError:
+            return value
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
     return value
 
 
@@ -108,6 +125,8 @@ NoneToList = BeforeValidator(_none_to_list)
 NumToStr = BeforeValidator(_num_to_str)
 # Input. Date fields that arrive empty or as a full ISO datetime string.
 LenientDate = BeforeValidator(_lenient_date)
+# Input. Datetime columns are naive UTC; a zoned value is converted on the way in.
+NaiveUTC = BeforeValidator(_naive_utc)
 # Input. Number fields where a cleared form field arrives as an empty string.
 EmptyStrToNone = BeforeValidator(_empty_str_to_none)
 # Input. Integer fields fed by the w3champions API, which sends fractions.
