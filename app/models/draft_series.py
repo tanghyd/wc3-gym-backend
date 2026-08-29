@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Self
 
-from sqlalchemy.sql.base import ExecutableOption
+from sqlalchemy.orm.interfaces import ORMOption
 from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import DBModel
+from app.core.db import rel
+from app.models.base import DBModel, ident
 from app.models.match import MatchPublic
 from app.models.types import AwareUTC, NumToStr, UTCDateTime
 from app.models.user import UserPublic
@@ -45,7 +46,7 @@ class DraftSeries(DraftSeriesBase, DBModel, table=True):
     )
 
     @classmethod
-    def _eager_options(cls) -> tuple[ExecutableOption, ...]:
+    def _eager_options(cls) -> tuple[ORMOption, ...]:
         """The rows a match draft reads off every draft series."""
         from sqlalchemy.orm import joinedload
 
@@ -53,15 +54,15 @@ class DraftSeries(DraftSeriesBase, DBModel, table=True):
         from app.models.user import User
 
         return (
-            joinedload(cls.match).joinedload(Match.team1),
-            joinedload(cls.match).joinedload(Match.team2),
-            joinedload(cls.match).joinedload(Match.season),
-            joinedload(cls.player1).selectinload(User.w3c_stats),
-            joinedload(cls.player1).selectinload(User.team_seasons),
-            joinedload(cls.player1).selectinload(User.signup_seasons),
-            joinedload(cls.player2).selectinload(User.w3c_stats),
-            joinedload(cls.player2).selectinload(User.team_seasons),
-            joinedload(cls.player2).selectinload(User.signup_seasons),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team1)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.team2)),
+            joinedload(rel(cls.match)).joinedload(rel(Match.season)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.w3c_stats)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.team_seasons)),
+            joinedload(rel(cls.player1)).selectinload(rel(User.signup_seasons)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.w3c_stats)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.team_seasons)),
+            joinedload(rel(cls.player2)).selectinload(rel(User.signup_seasons)),
         )
 
 
@@ -96,7 +97,7 @@ class DraftSeriesPublic(DraftSeriesBase):
     @classmethod
     def from_draft_series(cls, draft_series: DraftSeries) -> Self:
         return cls(
-            id=draft_series.id,
+            id=ident(draft_series),
             match_id=draft_series.match_id,
             match=MatchPublic.from_match(draft_series.match)
             if draft_series.match
