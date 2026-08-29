@@ -109,7 +109,7 @@ def test_callback_turns_away_a_non_member(
         params={"code": "c", "state": start_state(client)},
     )
     assert resp.status_code == 403
-    assert resp.json() == {"error": "Join the WC3 Gym Discord first"}
+    assert resp.json() == {"error": "No valid WC3 Gym server membership found for user"}
 
 
 def test_a_member_logs_in_and_reads_me(

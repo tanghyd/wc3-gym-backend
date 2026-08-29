@@ -82,7 +82,9 @@ def role_for(discord_id: str, admin_role: str | None = None) -> str:
     guild_id = os.getenv("DISCORD_GUILD_ID", "")
     member = _bot_get(f"/guilds/{guild_id}/members/{discord_id}")
     if member.status_code == 404:
-        raise ApiError(403, {"error": "Join the WC3 Gym Discord first"})
+        raise ApiError(
+            403, {"error": "No valid WC3 Gym server membership found for user"}
+        )
     if not member.ok:
         raise ApiError(502, {"error": "Discord refused the membership check"})
     roles = set(member.json().get("roles", []))
