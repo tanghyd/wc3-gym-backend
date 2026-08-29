@@ -204,7 +204,7 @@ The backend reads its configuration from the environment. `just up` passes devel
 
 `.env` is gitignored; copy `.env.example` to `.env` and fill in what you use. `create_app` calls `load_dotenv`, so its values arrive on their own; each has a default in the code. The deployment secrets are passed in by the stack.
 
-Three more values live in the `settings` table, not the environment, and are edited on the admin Config page: `w3c_url` (wins over the `W3C_URL` variable when present), `current_wc3_season` (the w3champions season the MMR columns read; when the row is missing the backend takes the newest season from w3champions) and `KOTH_NIGHTBOT_TOKEN`. `GET /config/w3c` shows the URL and season the backend resolved.
+Three more values live in the `settings` table, not the environment, and are edited on the admin Config page: `w3c_url` (wins over the `W3C_URL` variable when present), `current_w3c_season` (the w3champions season the MMR columns read; when the row is missing the backend takes the newest season from w3champions) and `KOTH_NIGHTBOT_TOKEN`. `GET /config/w3c` shows the URL and season the backend resolved.
 
 **Key environment variables:**
 

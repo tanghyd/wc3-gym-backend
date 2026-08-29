@@ -12,13 +12,20 @@ from alembic.migration import MigrationContext
 from sqlalchemy import Column, Index, column, create_engine, table, text
 from sqlmodel import SQLModel
 
-from tests.migrate import fresh_database, upgrade_to, upgrade_to_head
+from tests.migrate import (
+    downgrade_to,
+    fresh_database,
+    upgrade_to,
+    upgrade_to_head,
+)
 from tests.test_models import import_all_models
 
 # The revision before the seasons table carries a score system
 BEFORE_SCORE_SYSTEM = "658616cf0c2b"
 # The revision before the w3c stats are unique per user, race and season
 BEFORE_W3C_STATS_UNIQUE = "9f4b7c1d2ae5"
+# The revision before the season setting is spelled w3c
+BEFORE_W3C_SEASON_KEY = "e2a7c4d15b93"
 
 
 def comparable(
@@ -146,3 +153,29 @@ def test_the_migrations_have_one_head() -> None:
     from alembic.script import ScriptDirectory
 
     assert len(ScriptDirectory.from_config(Config("alembic.ini")).get_heads()) == 1
+
+
+def test_the_w3c_season_setting_is_renamed_and_renamed_back(tmp_path: Path) -> None:
+    """The pinned row keeps its value; only the key is spelled w3c."""
+    url = fresh_database(tmp_path, "season_key")
+    upgrade_to(url, BEFORE_W3C_SEASON_KEY)
+
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO settings (key, value) VALUES ('current_wc3_season', '21')"
+            )
+        )
+
+    upgrade_to(url, "head")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT key, value FROM settings")).all() == [
+            ("current_w3c_season", "21")
+        ]
+
+    downgrade_to(url, BEFORE_W3C_SEASON_KEY)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT key, value FROM settings")).all() == [
+            ("current_wc3_season", "21")
+        ]
