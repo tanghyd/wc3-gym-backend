@@ -5,24 +5,16 @@ environment ids are the bootstrap: they need no row and no grant can take
 them back. Every change syncs the account's bound roles.
 """
 
-import os
-
 from sqlalchemy import select
 from sqlmodel import col
 
 from app.core.db import Session
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.models.admin_grant import AdminGrant, AdminPublic
+from app.models.admin_grant import AdminGrant, AdminPublic, env_ids
 from app.models.user import User
 from app.services import discord_roles
 
 BY_ENVIRONMENT = "Already an admin by environment"
-
-
-def env_ids() -> set[str]:
-    """The Discord ids ADMIN_DISCORD_IDS makes admins."""
-    ids = os.getenv("ADMIN_DISCORD_IDS", "").replace(" ", "").split(",")
-    return {one for one in ids if one}
 
 
 def is_admin(discord_id: str) -> bool:

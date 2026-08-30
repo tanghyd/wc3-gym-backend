@@ -20,6 +20,7 @@ from sqlmodel import col
 
 from app.core.db import Session
 from app.core.exceptions import NotFoundError
+from app.models.admin_grant import AdminGrant, env_ids
 from app.models.base import ident
 from app.models.discord_role_binding import (
     DiscordRoleBinding,
@@ -35,7 +36,7 @@ from app.models.season import Season
 from app.models.settings import Settings
 from app.models.user import User
 from app.models.user_team_season import DBUserTeamSeason
-from app.services import admins, discord
+from app.services import discord
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,9 @@ def expected_roles(user: User, session: OrmSession) -> set[str]:
         elif binding.season_id is not None and binding.season_id != season_id:
             earned = False
         elif binding.kind is RoleKind.admin:
-            earned = admins.is_admin(user.discordId)
+            earned = user.discordId in env_ids() or bool(
+                session.get(AdminGrant, user.discordId)
+            )
         elif binding.kind is RoleKind.captain:
             earned = bool(captained)
         elif binding.kind is RoleKind.team:

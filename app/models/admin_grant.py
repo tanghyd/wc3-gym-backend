@@ -5,6 +5,7 @@ ids that are admin without one. Discord grants nothing: the guild only
 mirrors what app.services.admins says.
 """
 
+import os
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -12,6 +13,12 @@ from sqlmodel import Field, SQLModel
 
 from app.models.base import DBModel
 from app.models.types import AwareUTC, NumToStr, UTCDateTime, utcnow
+
+
+def env_ids() -> set[str]:
+    """The Discord ids ADMIN_DISCORD_IDS makes admins without a row."""
+    ids = os.getenv("ADMIN_DISCORD_IDS", "").replace(" ", "").split(",")
+    return {one for one in ids if one}
 
 
 class AdminGrantBase(SQLModel):
