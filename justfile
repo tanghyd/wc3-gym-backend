@@ -12,7 +12,10 @@ default:
 # The Docker stack on this machine: up, down, logs, psql, serve, migrate, seed.
 mod local './just/local.just'
 
-# The Terraform staging box, over SSH: deploy, logs, status, migrate, seed.
+# The staging box on Azure: plan, apply, output, allow-my-ip, destroy.
+mod terraform './just/terraform.just'
+
+# What the staging box runs, over SSH: deploy, sync, status, logs, migrate, seed.
 mod azure './just/azure.just'
 
 # The Vercel project, prod or staging: deploy, logs, status, migrate, seed, list, drop.
