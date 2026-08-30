@@ -1,0 +1,57 @@
+# The stack the staging box runs, at /opt/gnl/compose.yaml.
+#
+# cloud-init writes this file on first boot and `just azure sync` replaces it afterwards,
+# so this copy is the only source of truth. Two files next to it hold the parts that change:
+#   .env        BACKEND_IMAGE and FRONTEND_IMAGE, rewritten by `just azure deploy`
+#   postgres.env   the database credentials Terraform generated
+# Compose reads .env from this directory on its own, which is what keeps the image tags out
+# of the VM's custom_data — changing custom_data would replace the VM and its data volume.
+name: gnl
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # Statements over 200 ms go to the container log; the cache hint matches the 1 GiB box.
+    command: ["postgres", "-c", "log_min_duration_statement=200", "-c", "effective_cache_size=512MB"]
+    env_file: /opt/gnl/postgres.env
+    environment:
+      # ICU collation sorts text case-insensitively as MySQL did; alpine ships no libc locales.
+      POSTGRES_INITDB_ARGS: --locale-provider=icu --icu-locale=en-US
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gym_user -d gym_backend"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/tanghyd/gnl-backend:staging}
+    restart: unless-stopped
+    env_file: /opt/gnl/backend.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5002:5002"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/tanghyd/gnl-admin-frontend:staging}
+    restart: unless-stopped
+    expose:
+      - "5003"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    volumes:
+      - /opt/gnl/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+
+volumes:
+  postgres-data:

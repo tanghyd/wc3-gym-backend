@@ -1,0 +1,75 @@
+#cloud-config
+# Prepares the box on first boot: swap, Docker with log rotation, and the app stack.
+# The stack files come from deploy/box/; `just azure sync` replaces them afterwards.
+package_update: true
+
+packages:
+  - docker.io
+  - docker-compose-v2
+
+# The box holds 1 GiB. The measured peak is near 716 MiB, so swap is the safety net.
+swap:
+  filename: /swapfile
+  size: ${swap_size}
+  maxsize: ${swap_size}
+
+write_files:
+  # PLAN.md ops note: rotate container logs so the 32 GB disk cannot fill.
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "5"
+        }
+      }
+
+  - path: /opt/gnl/backend.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      DB_URL=postgresql+psycopg://gym_user:${db_password}@postgres:5432/gym_backend
+      JWT_SECRET_KEY=${jwt_secret_key}
+      JWT_ALGORITHM=HS256
+      ADMIN_TOKEN=${admin_token}
+      BOT_CLIENT_TOKEN=${bot_client_token}
+      FRONTEND_URL=${frontend_url}
+      LOG_LEVEL=INFO
+
+  - path: /opt/gnl/postgres.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      POSTGRES_DB=gym_backend
+      POSTGRES_USER=gym_user
+      POSTGRES_PASSWORD=${db_password}
+
+  # Compose reads this file on its own. `just azure deploy <tag>` rewrites it, which is
+  # how a new image reaches the box without touching the VM's custom_data.
+  - path: /opt/gnl/.env
+    permissions: "0644"
+    content: |
+      BACKEND_IMAGE=${backend_image}
+      FRONTEND_IMAGE=${frontend_image}
+
+  - path: /opt/gnl/compose.yaml
+    permissions: "0644"
+    content: |
+      ${compose_yaml}
+
+  - path: /opt/gnl/nginx.conf
+    permissions: "0644"
+    content: |
+      ${nginx_conf}
+
+runcmd:
+  - systemctl enable --now docker
+  - systemctl restart docker
+  - usermod -aG docker ${admin_username}
+  # A missing tag or an unreachable registry must not stop the box from booting.
+  - [ sh, -c, "cd /opt/gnl && docker compose pull || echo 'pull failed, see README step 4'" ]
+  - [ sh, -c, "cd /opt/gnl && docker compose up -d || echo 'start failed, see README step 4'" ]
+
+final_message: "gnl staging box ready after $UPTIME seconds"
