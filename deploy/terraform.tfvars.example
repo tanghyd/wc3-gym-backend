@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and fill in. Handover to the Gym is a redeploy with a
+# different copy of this file, not a subscription transfer.
+
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Your address range. SSH open to the internet is rejected by a validation rule.
+allowed_ssh_cidr = "203.0.113.4/32"
+
+# Build the frontend image only after you know backend_url. See README step 4.
+backend_image  = "ghcr.io/tanghyd/gnl-backend:staging"
+frontend_image = "ghcr.io/tanghyd/gnl-admin-frontend:staging"
+
+# Defaults that are usually right:
+# name_prefix         = "gnl-staging"
+# location            = "eastus"
+# vm_size             = "Standard_B1s"
+# os_disk_size_gb     = 32
+# ssh_public_key_path = "~/.ssh/id_rsa.pub"

@@ -1,5 +1,7 @@
 # GNL Backend
 
+> **This fork is the self-hosted line.** It runs on a plain Docker host (`deploy/`: Terraform for an Azure VM, Postgres, nginx). Day-to-day development happens on `Warcraft-Gym/wc3-gym-backend`, which deploys to Vercel with Supabase and Clerk sign-in; changes are not mirrored here. Paused 2026-08-30 to keep a deployable snapshot that needs no cloud services.
+
 FastAPI REST API for the GNL (Gym Newbie League) esports platform providing JWT-authenticated endpoints for user management, team operations, match scheduling, series tracking, and fantasy betting.
 
 ## Prerequisites
@@ -60,9 +62,9 @@ One code, two mechanisms, three places you can reach from a laptop. Docker runs 
 
 `just vercel` takes an environment, `prod` by default: `just vercel migrate` is production, `just vercel migrate staging` is the preview project. A push to `main` deploys production on its own; `just vercel deploy` is the same deploy from a working tree.
 
-The values come from `.env`, copied from `.env.example` and gitignored: `LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`, and `AZURE_STAGING_HOST`, which is `terraform -chdir=infra output -raw fqdn` in the gym-root workspace.
+The values come from `.env`, copied from `.env.example` and gitignored: `LOCAL_DB_URL`, `VERCEL_PROD_DB_URL`, `VERCEL_STAGING_DB_URL`, and `AZURE_STAGING_HOST`, which is optional: unset, the Azure recipes read the host from the Terraform state in `deploy/`.
 
-The gym-root workspace owns what spans two repositories: Terraform for the Azure box, the box files, and the frontend. Its `just azure deploy` calls `just azure deploy <tag>` here for the backend half.
+`deploy/` holds Terraform for the Azure box and the files the box runs (`box/compose.yaml`, `box/nginx.conf`); `deploy/README.md` is the runbook. `just azure deploy <tag>` pins the backend image; the frontend image is pinned from the frontend repo with its own `just deploy <tag>`, against the same host.
 
 ## Deploying to Vercel
 
