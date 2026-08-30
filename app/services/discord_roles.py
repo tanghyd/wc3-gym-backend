@@ -1,10 +1,11 @@
 """The Discord roles the database says an account earns, and the sync to the guild.
 
-The database is the source: a captain seat, a roster row, a fantasy team or a
-champion binding earns the role a discord_role_binding names. Sync grants what
-is missing and takes back only bound roles the account no longer earns; a role
-no binding names is left alone. Every write that changes an expectation calls
-sync after its transaction commits.
+The database is the source: an admin grant, a captain seat, a roster row, a
+signup, a fantasy team or a champion binding earns the role a
+discord_role_binding names. Sync grants what is missing and takes back only
+bound roles the account no longer earns; a role no binding names is left alone.
+Every write that changes an expectation calls sync after its transaction
+commits.
 
 With no DISCORD_BOT_TOKEN the guild answers nothing, so every function here is
 a no-op that returns empty results.
@@ -29,12 +30,12 @@ from app.models.discord_role_binding import (
 )
 from app.models.enums import RoleKind
 from app.models.fantasy_team import FantasyTeam
-from app.models.relationships import DBTeamSeasonCaptain
+from app.models.relationships import DBTeamSeasonCaptain, DBUserSeasonSignup
 from app.models.season import Season
 from app.models.settings import Settings
 from app.models.user import User
 from app.models.user_team_season import DBUserTeamSeason
-from app.services import discord
+from app.services import admins, discord
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,20 @@ def _current_season(session: OrmSession) -> int | None:
     return session.scalar(select(func.max(col(Season.id))))
 
 
+def current_season() -> int | None:
+    """The season the roles follow, read in a session of its own."""
+    with Session.begin() as session:
+        return _current_season(session)
+
+
 def expected_roles(user: User, session: OrmSession) -> set[str]:
-    """The bound roles this account earns right now."""
+    """The bound roles this account earns right now.
+
+    admin is a grant or an environment id, captain a seat of the current
+    season, team a roster row or a captain seat of that team,
+    gnl_participant a roster row or a signup, fantasy a drafted team, and
+    champion a roster row of the team and season the binding names.
+    """
     season_id = _current_season(session)
     rosters = {
         (row.team_id, row.season_id)
@@ -67,6 +80,12 @@ def expected_roles(user: User, session: OrmSession) -> set[str]:
             )
         )
     }
+    signed_up = bool(
+        season_id is not None
+        and session.get(
+            DBUserSeasonSignup, {"user_id": user.id, "season_id": season_id}
+        )
+    )
     drafted = session.scalar(
         select(func.count())
         .select_from(FantasyTeam)
@@ -83,12 +102,14 @@ def expected_roles(user: User, session: OrmSession) -> set[str]:
             earned = (binding.team_id, binding.season_id) in rosters
         elif binding.season_id is not None and binding.season_id != season_id:
             earned = False
+        elif binding.kind is RoleKind.admin:
+            earned = admins.is_admin(user.discordId)
         elif binding.kind is RoleKind.captain:
             earned = bool(captained)
         elif binding.kind is RoleKind.team:
             earned = binding.team_id in played | captained
         elif binding.kind is RoleKind.gnl_participant:
-            earned = bool(played)
+            earned = bool(played or signed_up)
         else:
             earned = bool(drafted)
         if earned:
