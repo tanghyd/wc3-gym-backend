@@ -1,6 +1,6 @@
 # GNL Backend
 
-> **This fork is the self-hosted line.** It runs on a plain Docker host (`deploy/`: Terraform for an Azure VM, Postgres, nginx) with the admin-token login only. Day-to-day development happens on `Warcraft-Gym/wc3-gym-backend`, which deploys to Vercel with Supabase and Clerk sign-in; changes are not mirrored here. Paused 2026-08-30 to keep a deployable snapshot that needs no cloud services.
+> **This fork is the self-hosted line.** It runs on a plain Docker host (`deploy/`: Terraform for an Azure VM, Postgres, nginx). Day-to-day development happens on `Warcraft-Gym/wc3-gym-backend`, which deploys to Vercel with Supabase and Clerk sign-in; changes are not mirrored here. Paused 2026-08-30 to keep a deployable snapshot that needs no cloud services.
 
 FastAPI REST API for the GNL (Gym Newbie League) esports platform providing JWT-authenticated endpoints for user management, team operations, match scheduling, series tracking, and fantasy betting.
 
