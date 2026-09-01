@@ -7,17 +7,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 from app.api.deps import (
-    Credentials,
     FantasyBetServiceDep,
     FantasyTeamServiceDep,
     SeasonServiceDep,
     SeriesServiceDep,
     SettingsServiceDep,
     UserServiceDep,
-    require_member,
 )
 from app.core.exceptions import ApiError, BadRequestError, NotFoundError
 from app.core.ordering import SortOrder
@@ -26,7 +23,7 @@ from app.models.fantasy_bet import FantasyBetCreate, FantasyBetUpdate
 from app.models.fantasy_team import FantasyTeamCreate, FantasyTeamUpdate
 from app.models.series import SeriesSort
 from app.models.user import UserCreate, UserUpdate
-from app.services import discord, discord_roles, player_series
+from app.services import player_series
 
 logger = logging.getLogger(__name__)
 
@@ -43,38 +40,6 @@ def _cleanup_expired() -> None:
     expired = [t for t, v in list(_token_store.items()) if v["expires_at"] <= now]
     for t in expired:
         _token_store.pop(t, None)
-
-
-def _identity(
-    request: Request,
-    credentials: Credentials,
-    token: str | None,
-    access_type: str | None = None,
-) -> dict[str, Any]:
-    """Answer the Discord identity of a player request: the Clerk session, else the token."""
-    # The token half goes when the bot posts static login links instead of signed ones.
-    if credentials is not None:
-        claims = require_member(request, credentials)
-        if claims["sub"] == "admin":
-            raise ApiError(401, {"error": "not_a_discord_member"})
-        account = discord.identify(claims["token"])
-        return {
-            "discord_id": str(claims["sub"]),
-            "discord_tag": account.get("global_name")
-            or account.get("username")
-            or str(claims["sub"]),
-            "season_id": None,
-            "access_type": access_type,
-        }
-    if not token:
-        raise BadRequestError("missing token")
-    _cleanup_expired()
-    entry = _token_store.get(token)
-    if not entry:
-        raise NotFoundError("token_not_found_or_expired")
-    if access_type and entry.get("access_type") != access_type:
-        raise BadRequestError("invalid_token_type")
-    return entry
 
 
 @router.post("/public-access-helper", response_model=None)
@@ -162,11 +127,9 @@ def public_create_user(
     settings_service: SettingsServiceDep,
     user_service: UserServiceDep,
     season_service: SeasonServiceDep,
-    request: Request,
-    credentials: Credentials,
     data: Annotated[dict | None, Body()] = None,
 ) -> dict[str, Any]:
-    """Create user and optionally assign to season for the signed-in Discord member."""
+    """Create user and optionally assign to season using a one-time token."""
     # A missing signups_enabled row leaves signups open
     try:
         signup_enabled = settings_service.get_setting("signups_enabled")
@@ -183,9 +146,18 @@ def public_create_user(
 
     data = data or {}
     token = data.get("token")
-    entry = _identity(request, credentials, token, "signup")
+    if not token:
+        raise BadRequestError("missing token")
 
-    # Build user payload. Force discord fields from the identity to avoid spoofing.
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
+
+    if entry.get("access_type") != "signup":
+        raise BadRequestError("invalid_token_type")
+
+    # Build user payload. Force discord fields from token to avoid spoofing.
     user_payload: dict[str, Any] = {
         "name": data.get("name"),
         "battleTag": data.get("battleTag"),
@@ -194,22 +166,11 @@ def public_create_user(
         "race": data.get("race"),
         "mmr": data.get("mmr"),
         "country": data.get("country"),
-        "timezone": data.get("timezone"),
     }
 
     # Basic validation
     if not user_payload["name"] or not user_payload["battleTag"]:
         raise BadRequestError("missing user fields")
-
-    # The route builds the model itself, so a rejected field is ours to answer
-    try:
-        user_create = UserCreate(**user_payload)
-    except ValidationError as invalid:
-        problems = "; ".join(
-            f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
-            for error in invalid.errors()
-        )
-        raise ApiError(422, {"error": problems}) from invalid
 
     # Validate BattleTag with W3Champions BEFORE creating/updating user
     if not user_service.validate_battle_tag(user_payload["battleTag"]):
@@ -219,7 +180,7 @@ def public_create_user(
         )
 
     # take the token here, because a pop lets only one parallel request continue
-    if token and _token_store.pop(token, None) is None:
+    if _token_store.pop(token, None) is None:
         raise NotFoundError("token_not_found_or_expired")
 
     # Check for existing user by discord id or tag
@@ -235,7 +196,7 @@ def public_create_user(
         user = user_service.update(existing.id, UserUpdate(**user_create.model_dump()))
     else:
         # create new user
-        user = user_service.add(user_create)
+        user = user_service.add(UserCreate(**user_payload))
 
     # Add to season if specified
     season_id = entry.get("season_id") or data.get("season_id") or data.get("seasonId")
@@ -249,9 +210,6 @@ def public_create_user(
     except Exception as we:  # a refused sync must not fail the signup
         logger.warning(f"W3C sync failed after signup for user {user.id}: {we}")
 
-    # The account is new to the guild's eyes; give it the roles it earns
-    discord_roles.sync([user.id])
-
     # return created user
     if user:
         return user.to_dict()
@@ -263,8 +221,6 @@ def get_player_series(
     user_service: UserServiceDep,
     series_service: SeriesServiceDep,
     response: Response,
-    request: Request,
-    credentials: Credentials,
     token: str | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 500,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -275,7 +231,16 @@ def get_player_series(
 
     sort names the field the page is ordered by, and the series id breaks its ties.
     """
-    entry = _identity(request, credentials, token, "dashboard")
+    if not token:
+        raise BadRequestError("missing token")
+
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
+
+    if entry.get("access_type") != "dashboard":
+        raise BadRequestError("invalid_token_type")
 
     # Find the user by discord_id
     users = user_service.find_by_discord_id(str(entry.get("discord_id")))
@@ -329,7 +294,6 @@ async def update_player_series(
     request: Request,
     user_service: UserServiceDep,
     series_service: SeriesServiceDep,
-    credentials: Credentials,
 ) -> JSONResponse | dict[str, Any]:
     """Update a series that belongs to the authenticated player."""
     # Handle both form data and JSON
@@ -352,11 +316,18 @@ async def update_player_series(
         data = await request.json() or {}
 
     token = data.get("token")
-    entry = _identity(
-        request, credentials, token if isinstance(token, str) else None, "dashboard"
-    )
+    if not token:
+        raise BadRequestError("missing token")
 
-    # Only the parsing and the identity check above need the event loop
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
+
+    if entry.get("access_type") != "dashboard":
+        raise BadRequestError("invalid_token_type")
+
+    # Only the parsing and the token check above need the event loop
     return await run_in_threadpool(
         player_series.update_player_series,
         series_id,
@@ -371,13 +342,16 @@ async def update_player_series(
 
 @router.get("/user-info", response_model=None)
 def get_user_info(
-    user_service: UserServiceDep,
-    request: Request,
-    credentials: Credentials,
-    token: str | None = None,
+    user_service: UserServiceDep, token: str | None = None
 ) -> dict[str, Any]:
-    """Get user information (for fantasy team captains who may not be players)."""
-    entry = _identity(request, credentials, token)
+    """Get user information by token (for fantasy team captains who may not be players)."""
+    if not token:
+        raise BadRequestError("missing token")
+
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
 
     # Find the user by discord_id
     users = user_service.find_by_discord_id(str(entry.get("discord_id")))
@@ -405,8 +379,6 @@ def create_fantasy_team(
     settings_service: SettingsServiceDep,
     user_service: UserServiceDep,
     fantasy_team_service: FantasyTeamServiceDep,
-    request: Request,
-    credentials: Credentials,
     data: Annotated[dict | None, Body()] = None,
 ) -> dict[str, Any]:
     """Create or update fantasy team, creating user if needed."""
@@ -425,7 +397,14 @@ def create_fantasy_team(
         )
 
     data = data or {}
-    entry = _identity(request, credentials, data.get("token"))
+    token = data.get("token")
+    if not token:
+        raise BadRequestError("missing token")
+
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
 
     # Validate required fields
     season_id = data.get("season_id")
@@ -516,13 +495,19 @@ def create_fantasy_team(
 def create_fantasy_bet(
     user_service: UserServiceDep,
     fantasy_bet_service: FantasyBetServiceDep,
-    request: Request,
-    credentials: Credentials,
     data: Annotated[dict | None, Body()] = None,
 ) -> dict[str, Any] | None:
-    """Create a fantasy bet for the identified player."""
+    """Create a fantasy bet using a token."""
     data = data or {}
-    entry = _identity(request, credentials, data.get("token"))
+    token = data.get("token")
+
+    if not token:
+        raise BadRequestError("missing token")
+
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
 
     # Get or create user based on discord info
     existing_users = user_service.find_by_discord_id(str(entry.get("discord_id")))
@@ -560,13 +545,19 @@ def update_fantasy_bet(
     bet_id: int,
     user_service: UserServiceDep,
     fantasy_bet_service: FantasyBetServiceDep,
-    request: Request,
-    credentials: Credentials,
     data: Annotated[dict | None, Body()] = None,
 ) -> dict[str, Any] | None:
-    """Update a fantasy bet of the identified player."""
+    """Update a fantasy bet using a token."""
     data = data or {}
-    entry = _identity(request, credentials, data.get("token"))
+    token = data.get("token")
+
+    if not token:
+        raise BadRequestError("missing token")
+
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
 
     # Get user based on discord info
     existing_users = user_service.find_by_discord_id(str(entry.get("discord_id")))
@@ -615,12 +606,16 @@ def delete_fantasy_bet(
     bet_id: int,
     user_service: UserServiceDep,
     fantasy_bet_service: FantasyBetServiceDep,
-    request: Request,
-    credentials: Credentials,
     token: str | None = None,
 ) -> None:
-    """Delete a fantasy bet of the identified player."""
-    entry = _identity(request, credentials, token)
+    """Delete a fantasy bet using a token."""
+    if not token:
+        raise BadRequestError("missing token")
+
+    _cleanup_expired()
+    entry = _token_store.get(token)
+    if not entry:
+        raise NotFoundError("token_not_found_or_expired")
 
     # Get user based on discord info
     existing_users = user_service.find_by_discord_id(str(entry.get("discord_id")))

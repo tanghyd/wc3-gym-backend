@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Annotated, Any, Self
 
 from pydantic import BeforeValidator
+from sqlalchemy import Index
 from sqlalchemy.orm import Session
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -11,7 +12,6 @@ from app.models.types import NoneToList, NumToStr
 from app.models.user import UserPublic
 
 if TYPE_CHECKING:
-    from app.models.relationships import DBTeamSeasonCaptain
     from app.models.team_season import DBTeamSeason
     from app.models.user_team_season import DBUserTeamSeason
 
@@ -36,10 +36,14 @@ class TeamBase(SQLModel):
     # name and long_name also receive numeric cells from the xlsx import.
     name: Annotated[str, NumToStr] = Field(max_length=50)
     long_name: Annotated[str | None, NumToStr] = Field(default=None, max_length=100)
+    discord_role: Annotated[str | None, NumToStr] = Field(default=None, max_length=50)
 
 
 class Team(TeamBase, DBModel, table=True):
     __tablename__ = "teams"
+    # A Discord role belongs to one club, which is what makes the club the same
+    # club across seasons. The short name is a label and may repeat.
+    __table_args__ = (Index("uq_teams_discord_role", "discord_role", unique=True),)
 
     id: int | None = Field(default=None, primary_key=True)
     icon: bytes | None = None
@@ -48,13 +52,6 @@ class Team(TeamBase, DBModel, table=True):
     )
     season_info: list["DBTeamSeason"] = Relationship(
         back_populates="team", sa_relationship_kwargs={"cascade": "all, delete"}
-    )
-    captain_seasons: list["DBTeamSeasonCaptain"] = Relationship(
-        back_populates="team",
-        sa_relationship_kwargs={
-            "cascade": "all, delete",
-            "order_by": "DBTeamSeasonCaptain.user_id",
-        },
     )
 
     @classmethod
@@ -73,25 +70,24 @@ class TeamCreate(TeamBase):
 class TeamUpdate(SQLModel):
     name: Annotated[str | None, NumToStr] = None
     long_name: Annotated[str | None, NumToStr] = None
+    discord_role: Annotated[str | None, NumToStr] = None
 
 
 class TeamPublic(TeamReduced):
-    """A team plus who played and captained for it, season by season.
+    """A team plus who played and coached for it, season by season.
 
     The lists are assembled from the link rows rather than read off the
     team, so this one is built by from_team, not by model_validate.
     """
 
     player_by_season: Annotated[dict[int, list[UserPublic]], SeasonLists] = {}
-    captains_by_season: Annotated[dict[int, list[UserPublic]], SeasonLists] = {}
+    coaches_by_season: Annotated[dict[int, list[UserPublic]], SeasonLists] = {}
     seasons_info: Annotated[list[SeasonInfoPublic], NoneToList] = []
-    # Captains whose Discord account still lacks a bound role; only Save Captains fills it
-    discord_role_missing: Annotated[list[str], NoneToList] = []
 
     @classmethod
     def from_team(cls, team: Team) -> Self:
         players = {}
-        captains = {}
+        coaches = {}
         seasons_info = (
             [
                 s
@@ -117,17 +113,29 @@ class TeamPublic(TeamReduced):
                             break
                     players[ut.season_id].append(user)
 
-        # Load captains from the team_season_captain rows
-        for seat in team.captain_seasons:
-            built = UserPublic.from_user(seat.user) if seat.user else None
-            if built:
-                captains.setdefault(seat.season_id, []).append(built)
+        # Load coaches from team_season entries
+        if team.season_info:
+            for season_info in team.season_info:
+                season_coaches = []
+                for coach in (
+                    season_info.coach_1,
+                    season_info.coach_2,
+                    season_info.coach_3,
+                ):
+                    if coach:
+                        built = UserPublic.from_user(coach)
+                        if built:
+                            season_coaches.append(built)
+
+                if season_coaches:
+                    coaches[season_info.season_id] = season_coaches
 
         return cls(
             id=ident(team),
             name=team.name,
             long_name=team.long_name,
+            discord_role=team.discord_role,
             player_by_season=players,
-            captains_by_season=captains,
+            coaches_by_season=coaches,
             seasons_info=seasons_info,
         )

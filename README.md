@@ -1,6 +1,6 @@
 # GNL Backend
 
-> **This fork is the self-hosted line.** It runs on a plain Docker host (`deploy/`: Terraform for an Azure VM, Postgres, nginx). Day-to-day development happens on `Warcraft-Gym/wc3-gym-backend`, which deploys to Vercel with Supabase and Clerk sign-in; changes are not mirrored here. Paused 2026-08-30 to keep a deployable snapshot that needs no cloud services.
+> **This fork carries the admin-token login only.** It runs on a plain Docker host (`deploy/`: Terraform for an Azure VM, Postgres, nginx). Day-to-day development happens on `Warcraft-Gym/wc3-gym-backend`, which deploys to Vercel with Supabase and Clerk sign-in; changes are not mirrored here. Paused 2026-08-30 to keep a deployable snapshot that needs no cloud services.
 
 FastAPI REST API for the GNL (Gym Newbie League) esports platform providing JWT-authenticated endpoints for user management, team operations, match scheduling, series tracking, and fantasy betting.
 
@@ -206,7 +206,7 @@ The backend reads its configuration from the environment. `just up` passes devel
 
 `.env` is gitignored; copy `.env.example` to `.env` and fill in what you use. `create_app` calls `load_dotenv`, so its values arrive on their own; each has a default in the code. The deployment secrets are passed in by the stack.
 
-More values live in the `settings` table, not the environment, and are edited on the admin Config page: `w3c_url` (wins over the `W3C_URL` variable when present), `current_w3c_season` (the w3champions season the MMR columns read; when the row is missing the backend takes the newest season from w3champions), `KOTH_NIGHTBOT_TOKEN`, and `current_gnl_season` (the season the captain check and the role sync read; when the row is missing they take the newest season). The Discord roles the app owns are rows of `discord_role_binding`, not settings, and the site admins are rows of `admin_grant`, managed under Config -> Access with `ADMIN_DISCORD_IDS` as the bootstrap. Discord grants no site admin: the guild owner, a role with the ADMINISTRATOR bit and the `admin_role` setting all read as members, and `admin_role` stays a setting because the Discord bot reads it for its own commands. `GET /config/w3c` shows the URL and season the backend resolved.
+Three more values live in the `settings` table, not the environment, and are edited on the admin Config page: `w3c_url` (wins over the `W3C_URL` variable when present), `current_w3c_season` (the w3champions season the MMR columns read; when the row is missing the backend takes the newest season from w3champions) and `KOTH_NIGHTBOT_TOKEN`. `GET /config/w3c` shows the URL and season the backend resolved.
 
 **Key environment variables:**
 
@@ -232,13 +232,9 @@ BOT_WEBHOOK_URL="http://host.docker.internal:3001/webhook/series-updated"
 | `FRONTEND_URL` | Admin frontend URL for CORS configuration | `http://localhost:5003` |
 | `BOT_WEBHOOK_URL` | Discord bot webhook endpoint for series updates; when unset, the notification is skipped | `http://host.docker.internal:3001/webhook/series-updated` |
 | `TOKEN_TIME` | Access token lifetime in minutes | `60` |
+| `REFRESH_TOKEN_TIME` | Refresh token lifetime in minutes | `300` |
 | `W3C_URL` | w3champions API base | `https://website-backend.w3champions.com/api` |
 | `LOG_LEVEL` | Python log level | `INFO` |
-| `CLERK_SECRET_KEY` | Clerk instance secret; verifies the session token and reads the account's Discord token | `sk_test_...` |
-| `CLERK_AUTHORIZED_PARTIES` | Comma-separated origins Clerk accepts the session from | `http://localhost:5173` |
-| `DISCORD_GUILD_ID` | The WC3 Gym Discord server; an account outside it logs in as a guest and reaches no player route | `316390574808760322` |
-| `ADMIN_DISCORD_IDS` | Comma-separated Discord ids that administer the site with no grant row and cannot be revoked; the bootstrap for Config -> Access | `220202568490418179` |
-| `DISCORD_BOT_TOKEN` | Optional bot token; when set, the app mirrors the roles of `discord_role_binding` into the guild and Config -> Discord roles reports the difference. Unset, every sync is a no-op | `MTIz...` |
 
 **Important Notes:**
 - `host.docker.internal` is a special DNS name that resolves to the host machine from within a Docker container
@@ -377,6 +373,7 @@ docker run -d --network gnl-net -p 5002:5002 \
     -e JWT_SECRET_KEY="$JWT_SECRET_KEY" \
     -e JWT_ALGORITHM=HS256 \
     -e TOKEN_TIME=60 \
+    -e REFRESH_TOKEN_TIME=1440 \
     gnl-backend:local \
     uvicorn --factory app.main:create_app --host 0.0.0.0 --port 5002
 ```

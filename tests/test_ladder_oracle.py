@@ -101,10 +101,10 @@ def oracle() -> dict[str, Any]:
             roster=roster,
             everyone=set().union(*roster.values()),
             team_of={tag: team for team, tags in roster.items() for tag in tags},
-            captains=frozenset(
-                captain["battleTag"].lower()
+            coaches=frozenset(
+                coach["battleTag"].lower()
                 for team in teams
-                for captain in team["captains_by_season"].get(GNL_SEASON, [])
+                for coach in team["coaches_by_season"].get(GNL_SEASON, [])
             ),
         )
     return _state
@@ -137,10 +137,10 @@ def test_our_numbers_match_wc3_no(
 
     tag = battle_tag.lower()
     opponents = frozenset(state["everyone"] - state["roster"][state["team_of"][tag]])
-    captains = state["captains"]
-    captain = tag in captains
+    coaches = state["coaches"]
+    coach = tag in coaches
     earned = achievements.earned(
-        mine, totals.points, achievements.DEFAULT_PAID, opponents, captains, captain
+        mine, totals.points, achievements.DEFAULT_PAID, opponents, coaches, coach
     )
 
     expected_points = ladder.WIN_POINTS * wins + ladder.LOSS_POINTS * losses

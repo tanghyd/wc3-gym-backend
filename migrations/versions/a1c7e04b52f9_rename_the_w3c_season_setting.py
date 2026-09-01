@@ -4,7 +4,7 @@ The vendor is w3champions, so every reference spells it w3c. The pinned row
 is edited by hand a few times a year; only its key changes.
 
 Revision ID: a1c7e04b52f9
-Revises: 5f4a1a4d88d3
+Revises: e2a7c4d15b93
 Create Date: 2026-08-30 09:00:00.000000
 
 """
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a1c7e04b52f9"
-down_revision: str | Sequence[str] | None = "c7a5e3f10b28"
+down_revision: str | Sequence[str] | None = "e2a7c4d15b93"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
