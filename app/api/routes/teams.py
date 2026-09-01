@@ -120,17 +120,22 @@ def remove_players(
 
 
 @router.put(
-    "/teams/{team_id}/seasons/{season_id}/captains",
+    "/teams/{team_id}/seasons/{season_id}/coaches",
     dependencies=[Depends(require_admin)],
 )
-def set_captains(
+def set_coaches(
     team_id: int,
     season_id: int,
     data: Annotated[dict, Body()],
     service: TeamServiceDep,
 ) -> TeamPublic:
-    """Replace the captains a team has in a season, however many that is."""
-    return service.set_captains(team_id, season_id, data.get("captain_ids", []))
+    """Set up to 3 coaches for a team in a specific season. Replaces existing coaches."""
+    coach_ids = data.get("coach_ids", [])
+
+    if len(coach_ids) > 3:
+        raise BadRequestError("Cannot assign more than 3 coaches per team per season")
+
+    return service.set_coaches(team_id, season_id, coach_ids)
 
 
 @router.get("/teams")

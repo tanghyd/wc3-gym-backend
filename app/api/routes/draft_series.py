@@ -3,12 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import (
-    DraftSeriesServiceDep,
-    SeriesServiceDep,
-    require_admin,
-    require_captain,
-)
+from app.api.deps import DraftSeriesServiceDep, SeriesServiceDep, require_admin
 from app.models.draft_series import (
     DraftSeriesCreate,
     DraftSeriesPublic,
@@ -58,7 +53,7 @@ def delete_draft_series(draft_series_id: int, service: DraftSeriesServiceDep) ->
     service.delete(draft_series_id)
 
 
-@router.get("/draft-series/{draft_series_id}", dependencies=[Depends(require_captain)])
+@router.get("/draft-series/{draft_series_id}")
 def get_draft_series(
     draft_series_id: int, service: DraftSeriesServiceDep
 ) -> DraftSeriesPublic:
@@ -66,7 +61,7 @@ def get_draft_series(
     return service.get(draft_series_id)
 
 
-@router.get("/draft-series/match/{match_id}", dependencies=[Depends(require_captain)])
+@router.get("/draft-series/match/{match_id}")
 def get_draft_series_by_match(
     match_id: int,
     service: DraftSeriesServiceDep,
